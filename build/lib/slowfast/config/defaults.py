@@ -159,14 +159,14 @@ _C.NONLOCAL.INSTANTIATION = "dot_product"
 
 # Size of pooling layers used in Non-Local.
 _C.NONLOCAL.POOL = [
-	# Res2
-	[[1, 2, 2], [1, 2, 2]],
-	# Res3
-	[[1, 2, 2], [1, 2, 2]],
-	# Res4
-	[[1, 2, 2], [1, 2, 2]],
-	# Res5
-	[[1, 2, 2], [1, 2, 2]],
+    # Res2
+    [[1, 2, 2], [1, 2, 2]],
+    # Res3
+    [[1, 2, 2], [1, 2, 2]],
+    # Res4
+    [[1, 2, 2], [1, 2, 2]],
+    # Res5
+    [[1, 2, 2], [1, 2, 2]],
 ]
 
 # -----------------------------------------------------------------------------
@@ -239,9 +239,6 @@ _C.DATA.CROP_SIZE = 224
 
 # The number of frames of the input clip.
 _C.DATA.NUM_FRAMES = 8
-
-# The number of frames per chunke
-_C.DATA.CHUNK_FRAMES = 32
 
 # The video sampling rate of the input clip.
 _C.DATA.SAMPLING_RATE = 8
@@ -427,12 +424,12 @@ _C.AVA.FRAME_DIR = "/mnt/fair-flash3-east/ava_trainval_frames.img/"
 
 # Directory path for files of frame lists.
 _C.AVA.FRAME_LIST_DIR = (
-	"/mnt/vol/gfsai-flash3-east/ai-group/users/haoqifan/ava/frame_list/"
+    "/mnt/vol/gfsai-flash3-east/ai-group/users/haoqifan/ava/frame_list/"
 )
 
 # Directory path for annotation files.
 _C.AVA.ANNOTATION_DIR = (
-	"/mnt/vol/gfsai-flash3-east/ai-group/users/haoqifan/ava/frame_list/"
+    "/mnt/vol/gfsai-flash3-east/ai-group/users/haoqifan/ava/frame_list/"
 )
 
 # Filenames of training samples list files.
@@ -469,9 +466,9 @@ _C.AVA.TRAIN_PCA_EIGVAL = [0.225, 0.224, 0.229]
 
 # Eigenvectors for PCA jittering.
 _C.AVA.TRAIN_PCA_EIGVEC = [
-	[-0.5675, 0.7192, 0.4009],
-	[-0.5808, -0.0045, -0.8140],
-	[-0.5836, -0.6948, 0.4203],
+    [-0.5675, 0.7192, 0.4009],
+    [-0.5808, -0.0045, -0.8140],
+    [-0.5836, -0.6948, 0.4203],
 ]
 
 # Whether to do horizontal flipping during test.
@@ -497,30 +494,30 @@ custom_config.add_custom_config(_C)
 
 
 def _assert_and_infer_cfg(cfg):
-	# BN assertions.
-	if cfg.BN.USE_PRECISE_STATS:
-		assert cfg.BN.NUM_BATCHES_PRECISE >= 0
-	# TRAIN assertions.
-	assert cfg.TRAIN.CHECKPOINT_TYPE in ["pytorch", "caffe2"]
-	assert cfg.TRAIN.BATCH_SIZE % cfg.NUM_GPUS == 0
+    # BN assertions.
+    if cfg.BN.USE_PRECISE_STATS:
+        assert cfg.BN.NUM_BATCHES_PRECISE >= 0
+    # TRAIN assertions.
+    assert cfg.TRAIN.CHECKPOINT_TYPE in ["pytorch", "caffe2"]
+    assert cfg.TRAIN.BATCH_SIZE % cfg.NUM_GPUS == 0
 
-	# TEST assertions.
-	assert cfg.TEST.CHECKPOINT_TYPE in ["pytorch", "caffe2"]
-	assert cfg.TEST.BATCH_SIZE % cfg.NUM_GPUS == 0
-	assert cfg.TEST.NUM_SPATIAL_CROPS == 3
+    # TEST assertions.
+    assert cfg.TEST.CHECKPOINT_TYPE in ["pytorch", "caffe2"]
+    assert cfg.TEST.BATCH_SIZE % cfg.NUM_GPUS == 0
+    assert cfg.TEST.NUM_SPATIAL_CROPS == 3
 
-	# RESNET assertions.
-	assert cfg.RESNET.NUM_GROUPS > 0
-	assert cfg.RESNET.WIDTH_PER_GROUP > 0
-	assert cfg.RESNET.WIDTH_PER_GROUP % cfg.RESNET.NUM_GROUPS == 0
+    # RESNET assertions.
+    assert cfg.RESNET.NUM_GROUPS > 0
+    assert cfg.RESNET.WIDTH_PER_GROUP > 0
+    assert cfg.RESNET.WIDTH_PER_GROUP % cfg.RESNET.NUM_GROUPS == 0
 
-	# General assertions.
-	assert cfg.SHARD_ID < cfg.NUM_SHARDS
-	return cfg
+    # General assertions.
+    assert cfg.SHARD_ID < cfg.NUM_SHARDS
+    return cfg
 
 
 def get_cfg():
-	"""
-	Get a copy of the default config.
-	"""
-	return _assert_and_infer_cfg(_C.clone())
+    """
+    Get a copy of the default config.
+    """
+    return _assert_and_infer_cfg(_C.clone())
