@@ -223,6 +223,9 @@ _C.SLOWFAST.FUSION_CONV_CHANNEL_RATIO = 2
 _C.SLOWFAST.FUSION_KERNEL_SZ = 5
 
 
+_C.TRANSFORMER = CfgNode()
+_C.TRANSFORMER.RATIO = 0.15
+
 # -----------------------------------------------------------------------------
 # Data options
 # -----------------------------------------------------------------------------

@@ -18,13 +18,13 @@ import slowfast.utils.metrics as metrics
 import slowfast.utils.misc as misc
 import slowfast.utils.functions as func
 from slowfast.datasets import loader
-from slowfast.models import build_model
+from slowfast.models import build_model, build_transformer
 from slowfast.utils.meters import AVAMeter, TrainMeter, ValMeter
 
 logger = logging.get_logger(__name__)
 
 
-def train_epoch(train_loader, model, optimizer, train_meter, cur_epoch, cfg):
+def train_epoch(train_loader, model, transformer, optimizer, train_meter, cur_epoch, cfg):
 	"""
 	Perform the video training for one epoch.
 	Args:
@@ -44,7 +44,6 @@ def train_epoch(train_loader, model, optimizer, train_meter, cur_epoch, cfg):
 
 	for cur_iter, (inputs, labels, _, meta) in enumerate(train_loader):
 		inputs = func.flatten(inputs, cfg)
-		pdb.set_trace()
 		# Transfer the data to the current GPU device.
 		if isinstance(inputs, (list,)):
 			for i in range(len(inputs)):
@@ -65,18 +64,22 @@ def train_epoch(train_loader, model, optimizer, train_meter, cur_epoch, cfg):
 
 		if cfg.DETECTION.ENABLE:
 			# Compute the predictions.
-			preds = model(inputs, meta["boxes"])
+			feature = model(inputs, meta["boxes"])
 
 		else:
 			# Perform the forward pass.
-			preds = model(inputs)
-		preds = func.unflatten(preds, cfg)
-		pdb.set_trace()
+			feature = model(inputs)
+
+		feature = func.unflatten(feature, cfg)
+
+		masked_feature, mask = func.maskout(feature, cfg)          
+		preds = transformer(masked_feature)
+		score, target = func.compute_score(mask, feature, preds)
 		# Explicitly declare reduction to mean.
 		loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
 
 		# Compute the loss.
-		loss = loss_fun(preds, labels)
+		loss = loss_fun(score, target)
 
 		# check Nan Loss.
 		misc.check_nan_losses(loss)
@@ -104,28 +107,30 @@ def train_epoch(train_loader, model, optimizer, train_meter, cur_epoch, cfg):
 				loss = loss.item()
 			else:
 				# Compute the errors.
-				num_topks_correct = metrics.topks_correct(preds, labels, (1, 5))
-				top1_err, top5_err = [
-					(1.0 - x / preds.size(0)) * 100.0 for x in num_topks_correct
-				]
+#				num_topks_correct = metrics.topks_correct(preds, labels, (1, 5))
+#				top1_err, top5_err = [
+#					(1.0 - x / preds.size(0)) * 100.0 for x in num_topks_correct
+#				]
 
 				# Gather all the predictions across all the devices.
 				if cfg.NUM_GPUS > 1:
-					loss, top1_err, top5_err = du.all_reduce(
-						[loss, top1_err, top5_err]
-					)
-
+#					loss, top1_err, top5_err = du.all_reduce(
+#						[loss, top1_err, top5_err]
+#					)
+					loss = du.all_reduce(loss)
 				# Copy the stats from GPU to CPU (sync point).
-				loss, top1_err, top5_err = (
-					loss.item(),
-					top1_err.item(),
-					top5_err.item(),
-				)
+#				loss, top1_err, top5_err = (
+#					loss.item(),
+#					top1_err.item(),
+#					top5_err.item(),
+#				)
+				loss = loss.item()
 
 			train_meter.iter_toc()
 			# Update and log stats.
 			train_meter.update_stats(
-				top1_err, top5_err, loss, lr, inputs[0].size(0) * cfg.NUM_GPUS
+				0, 0, loss, lr, inputs[0].size(0) * cfg.NUM_GPUS
+#				top1_err, top5_err, loss, lr, inputs[0].size(0) * cfg.NUM_GPUS
 			)
 
 		train_meter.log_iter_stats(cur_epoch, cur_iter)
@@ -263,11 +268,13 @@ def train(cfg):
 
 	# Build the video model and print model statistics.
 	model = build_model(cfg)
+	transformer = build_transformer(cfg)
+
 	if du.is_master_proc() and cfg.LOG_MODEL_INFO:
 		misc.log_model_info(model, cfg, is_train=True)
 
 	# Construct the optimizer.
-	optimizer = optim.construct_optimizer(model, cfg)
+	optimizer = optim.construct_optimizer(model, cfg, transformer)
 
 	# Load a checkpoint to resume training if applicable.
 	if cfg.TRAIN.AUTO_RESUME and cu.has_checkpoint(cfg.OUTPUT_DIR):
@@ -310,7 +317,7 @@ def train(cfg):
 		# Shuffle the dataset.
 		loader.shuffle_dataset(train_loader, cur_epoch)
 		# Train for one epoch.
-		train_epoch(train_loader, model, optimizer, train_meter, cur_epoch, cfg)
+		train_epoch(train_loader, model, transformer, optimizer, train_meter, cur_epoch, cfg)
 
 		# Compute precise BN stats.
 		if cfg.BN.USE_PRECISE_STATS and len(get_bn_modules(model)) > 0:
