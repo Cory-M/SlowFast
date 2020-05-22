@@ -125,14 +125,12 @@ def train_epoch(train_loader, model, transformer, classifier, optimizer, train_m
 					loss, top1_err, top5_err = du.all_reduce(
 						[loss, top1_err, top5_err]
 					)
-					loss = du.all_reduce(loss)
 				# Copy the stats from GPU to CPU (sync point).
 				loss, top1_err, top5_err = (
 					loss.item(),
 					top1_err.item(),
 					top5_err.item(),
 				)
-#loss = loss.item()
 
 			train_meter.iter_toc()
 			# Update and log stats.
