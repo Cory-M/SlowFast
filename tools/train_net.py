@@ -8,6 +8,7 @@ import numpy as np
 import pprint
 import torch
 from fvcore.nn.precise_bn import get_bn_modules, update_bn_stats
+import random
 
 import slowfast.models.losses as losses
 import slowfast.models.optimizer as optim
@@ -18,13 +19,13 @@ import slowfast.utils.metrics as metrics
 import slowfast.utils.misc as misc
 import slowfast.utils.functions as func
 from slowfast.datasets import loader
-from slowfast.models import build_model, build_transformer
+from slowfast.models import build_model, build_transformer, build_classifier
 from slowfast.utils.meters import AVAMeter, TrainMeter, ValMeter
 
 logger = logging.get_logger(__name__)
 
 
-def train_epoch(train_loader, model, transformer, optimizer, train_meter, cur_epoch, cfg):
+def train_epoch(train_loader, model, transformer, classifier, optimizer, train_meter, cur_epoch, cfg):
 	"""
 	Perform the video training for one epoch.
 	Args:
@@ -75,18 +76,25 @@ def train_epoch(train_loader, model, transformer, optimizer, train_meter, cur_ep
 		masked_feature, mask = func.maskout(feature, cfg)          
 		preds = transformer(masked_feature)
 		score, target = func.compute_score(mask, feature, preds)
+
+		inf_cls = classifier(preds[:,random.randint(0, preds.size(1)-1),:].detach())
+
 		# Explicitly declare reduction to mean.
 		loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
+		inf_loss_fun = losses.get_loss_func('cross_entropy')(reduction="mean")
 
 		# Compute the loss.
 		loss = loss_fun(score, target)
+		inf_loss = inf_loss_fun(inf_cls, labels)
+		Loss = loss + inf_loss
 
 		# check Nan Loss.
 		misc.check_nan_losses(loss)
+		misc.check_nan_losses(inf_loss)
 
 		# Perform the backward pass.
 		optimizer.zero_grad()
-		loss.backward()
+		Loss.backward()
 		# Update the parameters.
 		optimizer.step()
 
@@ -107,30 +115,30 @@ def train_epoch(train_loader, model, transformer, optimizer, train_meter, cur_ep
 				loss = loss.item()
 			else:
 				# Compute the errors.
-#				num_topks_correct = metrics.topks_correct(preds, labels, (1, 5))
-#				top1_err, top5_err = [
-#					(1.0 - x / preds.size(0)) * 100.0 for x in num_topks_correct
-#				]
+				num_topks_correct = metrics.topks_correct(inf_cls, labels, (1, 5))
+				top1_err, top5_err = [
+					(1.0 - x / preds.size(0)) * 100.0 for x in num_topks_correct
+				]
 
 				# Gather all the predictions across all the devices.
 				if cfg.NUM_GPUS > 1:
-#					loss, top1_err, top5_err = du.all_reduce(
-#						[loss, top1_err, top5_err]
-#					)
+					loss, top1_err, top5_err = du.all_reduce(
+						[loss, top1_err, top5_err]
+					)
 					loss = du.all_reduce(loss)
 				# Copy the stats from GPU to CPU (sync point).
-#				loss, top1_err, top5_err = (
-#					loss.item(),
-#					top1_err.item(),
-#					top5_err.item(),
-#				)
-				loss = loss.item()
+				loss, top1_err, top5_err = (
+					loss.item(),
+					top1_err.item(),
+					top5_err.item(),
+				)
+#loss = loss.item()
 
 			train_meter.iter_toc()
 			# Update and log stats.
 			train_meter.update_stats(
-				0, 0, loss, lr, inputs[0].size(0) * cfg.NUM_GPUS
-#				top1_err, top5_err, loss, lr, inputs[0].size(0) * cfg.NUM_GPUS
+#				0, 0, loss, lr, inputs[0].size(0) * cfg.NUM_GPUS
+				top1_err, top5_err, loss, lr, inputs[0].size(0) * cfg.NUM_GPUS
 			)
 
 		train_meter.log_iter_stats(cur_epoch, cur_iter)
@@ -269,12 +277,13 @@ def train(cfg):
 	# Build the video model and print model statistics.
 	model = build_model(cfg)
 	transformer = build_transformer(cfg)
+	classifier = build_classifier(cfg)
 
 	if du.is_master_proc() and cfg.LOG_MODEL_INFO:
 		misc.log_model_info(model, cfg, is_train=True)
 
 	# Construct the optimizer.
-	optimizer = optim.construct_optimizer(model, cfg, transformer)
+	optimizer = optim.construct_optimizer(model, cfg, transformer, classifier)
 
 	# Load a checkpoint to resume training if applicable.
 	if cfg.TRAIN.AUTO_RESUME and cu.has_checkpoint(cfg.OUTPUT_DIR):
@@ -317,7 +326,7 @@ def train(cfg):
 		# Shuffle the dataset.
 		loader.shuffle_dataset(train_loader, cur_epoch)
 		# Train for one epoch.
-		train_epoch(train_loader, model, transformer, optimizer, train_meter, cur_epoch, cfg)
+		train_epoch(train_loader, model, transformer, classifier, optimizer, train_meter, cur_epoch, cfg)
 
 		# Compute precise BN stats.
 		if cfg.BN.USE_PRECISE_STATS and len(get_bn_modules(model)) > 0:

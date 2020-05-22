@@ -8,7 +8,7 @@ import torch
 import slowfast.utils.lr_policy as lr_policy
 
 
-def construct_optimizer(model, cfg, transformer=None):
+def construct_optimizer(model, cfg, transformer=None, classifier=None):
 	"""
 	Construct a stochastic gradient descent or ADAM optimizer with momentum.
 	Details can be found in:
@@ -30,6 +30,9 @@ def construct_optimizer(model, cfg, transformer=None):
 	if transformer:
 		for p in transformer.parameters():
 			non_bn_parameters.append(p)
+	if classifier:
+		for p in classifier.parameters():
+			non_bn_parameters.append(p)
 	for name, p in model.named_parameters():
 		if "bn" in name:
 			bn_params.append(p)
@@ -44,7 +47,7 @@ def construct_optimizer(model, cfg, transformer=None):
 		{"params": non_bn_parameters, "weight_decay": cfg.SOLVER.WEIGHT_DECAY},
 	]
 	# Check all parameters will be passed into optimizer.
-	assert len(list(model.parameters())) == len(non_bn_parameters) + len(bn_params) - len(list(transformer.parameters())), "parameter size does not match: {} + {} != {} - {}".format(
+	assert len(list(model.parameters())) == len(non_bn_parameters) + len(bn_params) - len(list(transformer.parameters())) - len(list(classifier.parameters())), "parameter size does not match: {} + {} != {} - {}".format(
 		len(non_bn_parameters), len(bn_params), len(list(model.parameters())),
 		len(list(transformer.parameters()))
 	)

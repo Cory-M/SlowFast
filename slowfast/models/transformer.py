@@ -8,7 +8,7 @@ class TransformerModel(nn.Module):
 	def __init__(self, cfg, nhead=1, nhid=512, nlayers=2, dropout=0.5):
 		super(TransformerModel, self).__init__()
 		from torch.nn import TransformerEncoder, TransformerEncoderLayer
-		self.ninp = cfg.MODEL.NUM_CLASSES
+		self.ninp = cfg.MODEL.NUM_FEATURES
 		encoder_layers = TransformerEncoderLayer(self.ninp, nhead, nhid, dropout)
 		self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
 #		self.encoder = nn.Embedding(ntoken, ninp)

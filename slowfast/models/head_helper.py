@@ -16,7 +16,7 @@ class ResNetRoIHead(nn.Module):
     def __init__(
         self,
         dim_in,
-        num_classes,
+        num_feature,
         pool_size,
         resolution,
         scale_factor,
@@ -32,7 +32,7 @@ class ResNetRoIHead(nn.Module):
         Args:
             dim_in (list): the list of channel dimensions of the p inputs to the
                 ResNetHead.
-            num_classes (int): the channel dimensions of the p outputs to the
+            num_feature (int): the channel dimensions of the p outputs to the
                 ResNetHead.
             pool_size (list): the list of kernel sizes of p spatial temporal
                 poolings, temporal pool kernel size, spatial pool kernel size,
@@ -87,7 +87,7 @@ class ResNetRoIHead(nn.Module):
 
         # Perform FC in a fully convolutional manner. The FC layer will be
         # initialized with a different std comparing to convolutional layers.
-        self.projection = nn.Linear(sum(dim_in), num_classes, bias=True)
+        self.projection = nn.Linear(sum(dim_in), num_feature, bias=True)
 
         # Softmax for evaluation and testing.
         if act_func == "softmax":
@@ -142,7 +142,7 @@ class ResNetBasicHead(nn.Module):
     def __init__(
         self,
         dim_in,
-        num_classes,
+        num_feature,
         pool_size,
         dropout_rate=0.0,
         act_func="softmax",
@@ -155,7 +155,7 @@ class ResNetBasicHead(nn.Module):
         Args:
             dim_in (list): the list of channel dimensions of the p inputs to the
                 ResNetHead.
-            num_classes (int): the channel dimensions of the p outputs to the
+            num_feature (int): the channel dimensions of the p outputs to the
                 ResNetHead.
             pool_size (list): the list of kernel sizes of p spatial temporal
                 poolings, temporal pool kernel size, spatial pool kernel size,
@@ -179,7 +179,7 @@ class ResNetBasicHead(nn.Module):
             self.dropout = nn.Dropout(dropout_rate)
         # Perform FC in a fully convolutional manner. The FC layer will be
         # initialized with a different std comparing to convolutional layers.
-        self.projection = nn.Linear(sum(dim_in), num_classes, bias=True)
+        self.projection = nn.Linear(sum(dim_in), num_feature, bias=True)
 
         # Softmax for evaluation and testing.
         if act_func == "softmax":

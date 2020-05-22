@@ -13,7 +13,7 @@ def flatten(tensor, cfg):
 	return tensor
 			
 def unflatten(tensor, cfg):
-	return tensor.view(cfg.TRAIN.BATCH_SIZE, -1, cfg.MODEL.NUM_CLASSES)
+	return tensor.view(cfg.TRAIN.BATCH_SIZE, -1, cfg.MODEL.NUM_FEATURES)
 
 
 def maskout(tensor, cfg):
@@ -28,8 +28,4 @@ def compute_score(mask, feature, preds):
 	score = torch.matmul(feature[mask], preds[mask].transpose(0,1))
 	target = torch.eye(N).argmax(dim=1).cuda()
 	return score, target
-
-
-
-
 

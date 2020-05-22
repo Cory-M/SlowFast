@@ -333,7 +333,7 @@ class SlowFast(nn.Module):
 					width_per_group * 32,
 					width_per_group * 32 // cfg.SLOWFAST.BETA_INV,
 				],
-				num_classes=cfg.MODEL.NUM_CLASSES,
+				num_feature=cfg.MODEL.NUM_FEATURES,
 				pool_size=[
 					[
 						cfg.DATA.CHUNK_FRAMES
@@ -356,7 +356,7 @@ class SlowFast(nn.Module):
 					width_per_group * 32,
 					width_per_group * 32 // cfg.SLOWFAST.BETA_INV,
 				],
-				num_classes=cfg.MODEL.NUM_CLASSES,
+				num_feature=cfg.MODEL.NUM_FEATURES,
 				pool_size=[
 					[
 						cfg.DATA.CHUNK_FRAMES
@@ -549,7 +549,7 @@ class ResNet(nn.Module):
 		if self.enable_detection:
 			self.head = head_helper.ResNetRoIHead(
 				dim_in=[width_per_group * 32],
-				num_classes=cfg.MODEL.NUM_CLASSES,
+				num_feature=cfg.MODEL.NUM_FEATURES,
 				pool_size=[[cfg.DATA.CHUNK_FRAMES // pool_size[0][0], 1, 1]],
 				resolution=[[cfg.DETECTION.ROI_XFORM_RESOLUTION] * 2],
 				scale_factor=[cfg.DETECTION.SPATIAL_SCALE_FACTOR],
@@ -560,7 +560,7 @@ class ResNet(nn.Module):
 		else:
 			self.head = head_helper.ResNetBasicHead(
 				dim_in=[width_per_group * 32],
-				num_classes=cfg.MODEL.NUM_CLASSES,
+				num_feature=cfg.MODEL.NUM_FEATURES,
 				pool_size=[
 					[
 						cfg.DATA.CHUNK_FRAMES // pool_size[0][0],
