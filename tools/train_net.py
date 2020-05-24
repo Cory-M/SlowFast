@@ -3,12 +3,14 @@
 
 """Train a video classification model."""
 import pdb
+import os
 
 import numpy as np
 import pprint
 import torch
 from fvcore.nn.precise_bn import get_bn_modules, update_bn_stats
 import random
+from torch.utils.tensorboard import SummaryWriter
 
 import slowfast.models.losses as losses
 import slowfast.models.optimizer as optim
@@ -25,7 +27,7 @@ from slowfast.utils.meters import AVAMeter, TrainMeter, ValMeter
 logger = logging.get_logger(__name__)
 
 
-def train_epoch(train_loader, model, transformer, classifier, optimizer, train_meter, cur_epoch, cfg):
+def train_epoch(train_loader, model, transformer, classifier, optimizer, train_meter, cur_epoch, cfg, tb_logger):
 	"""
 	Perform the video training for one epoch.
 	Args:
@@ -134,9 +136,15 @@ def train_epoch(train_loader, model, transformer, classifier, optimizer, train_m
 			train_meter.iter_toc()
 			# Update and log stats.
 			train_meter.update_stats(
-#				0, 0, loss, lr, inputs[0].size(0) * cfg.NUM_GPUS
 				top1_err, top5_err, loss, lr, inputs[0].size(0) * cfg.NUM_GPUS
 			)
+			
+		if du.is_master_proc() and (cur_iter + 1) % cfg.LOG_PERIOD == 0:
+			step = cur_epoch * len(train_loader) + cur_iter
+			top1_err, top5_err, loss = train_meter.get_stats(cur_epoch, cur_iter)
+			tb_logger.add_scalar('train_loss', loss, step)
+			tb_logger.add_scalar('top1_err', top1_err, step)
+			tb_logger.add_scalar('top5_err', top5_err, step)
 
 		train_meter.log_iter_stats(cur_epoch, cur_iter)
 		train_meter.iter_tic()
@@ -147,7 +155,7 @@ def train_epoch(train_loader, model, transformer, classifier, optimizer, train_m
 
 
 @torch.no_grad()
-def eval_epoch(val_loader, model, transformer, classifier, val_meter, cur_epoch, cfg):
+def eval_epoch(val_loader, model, transformer, classifier, val_meter, cur_epoch, cfg, tb_logger):
 	"""
 	Evaluate the model on the val set.
 	Args:
@@ -229,6 +237,13 @@ def eval_epoch(val_loader, model, transformer, classifier, val_meter, cur_epoch,
 				loss, top1_err, top5_err, inputs[0].size(0) * cfg.NUM_GPUS
 			)
 
+		if du.is_master_proc() and (cur_iter + 1) % cfg.LOG_PERIOD == 0:
+			step = cur_epoch * len(val_loader) + cur_iter
+			top1_err, top5_err, loss = val_meter.get_stats(cur_epoch, cur_iter)
+			tb_logger.add_scalar('train_loss', loss, step)
+			tb_logger.add_scalar('top1_err', top1_err, step)
+			tb_logger.add_scalar('top5_err', top5_err, step)
+
 		val_meter.log_iter_stats(cur_epoch, cur_iter)
 		val_meter.iter_tic()
 
@@ -274,6 +289,7 @@ def train(cfg):
 
 	# Setup logging format.
 	logging.setup_logging(cfg.OUTPUT_DIR)
+	tb_logger = SummaryWriter(os.path.join(cfg.OUTPUT_DIR, 'tb_vis'))
 
 	# Print config.
 	logger.info("Train with config:")
@@ -332,7 +348,7 @@ def train(cfg):
 		# Shuffle the dataset.
 		loader.shuffle_dataset(train_loader, cur_epoch)
 		# Train for one epoch.
-		train_epoch(train_loader, model, transformer, classifier, optimizer, train_meter, cur_epoch, cfg)
+		train_epoch(train_loader, model, transformer, classifier, optimizer, train_meter, cur_epoch, cfg, tb_logger)
 
 		# Compute precise BN stats.
 		if cfg.BN.USE_PRECISE_STATS and len(get_bn_modules(model)) > 0:
@@ -346,4 +362,4 @@ def train(cfg):
 			cu.save_checkpoint(cfg.OUTPUT_DIR, model, transformer, classifier, optimizer, cur_epoch, cfg)
 		# Evaluate the model on validation set.
 		if misc.is_eval_epoch(cfg, cur_epoch):
-			eval_epoch(val_loader, model, transformer, classifier, val_meter, cur_epoch, cfg)
+			eval_epoch(val_loader, model, transformer, classifier, val_meter, cur_epoch, cfg, tb_logger)

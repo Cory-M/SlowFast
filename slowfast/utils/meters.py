@@ -498,6 +498,9 @@ class TrainMeter(object):
 			self.num_top1_mis += top1_err * mb_size
 			self.num_top5_mis += top5_err * mb_size
 
+	def get_stats(self, cur_epoch, cur_iter):
+		return self.loss.get_win_median(), self.mb_top1_err.get_win_median(), self.mb_top5_err.get_win_median()
+
 	def log_iter_stats(self, cur_epoch, cur_iter):
 		"""
 		log the stats of the current iteration.
@@ -640,6 +643,9 @@ class ValMeter(object):
 		# TODO: merge update_prediction with update_stats.
 		self.all_preds.append(preds)
 		self.all_labels.append(labels)
+	
+	def get_stats(self, cur_epoch, cur_iter):
+		return self.loss.get_win_median(), self.mb_top1_err.get_win_median(), self.mb_top5_err.get_win_median()
 
 	def log_iter_stats(self, cur_epoch, cur_iter):
 		"""
