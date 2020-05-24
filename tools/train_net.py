@@ -191,8 +191,8 @@ def eval_epoch(val_loader, model, transformer, classifier, val_meter, cur_epoch,
 				ori_boxes = torch.cat(du.all_gather_unaligned(ori_boxes), dim=0)
 				metadata = torch.cat(du.all_gather_unaligned(metadata), dim=0)
 
-			val_meter.iter_toc
-			# Update and log tats.
+			val_meter.iter_toc()
+			# Update and log stats.
 			val_meter.update_stats(preds.cpu(), ori_boxes.cpu(), metadata.cpu())
 		else:
 			feature = func.unflatten(model(func.flatten(inputs, cfg)), cfg)
