@@ -82,11 +82,11 @@ def train_epoch(train_loader, model, transformer, classifier, optimizer, train_m
 #pdb.set_trace()
 		if du.is_master_proc() and (cur_iter + 1) % (5 * cfg.LOG_PERIOD) == 0:
 			fea = masked_feature.permute(1, 0, 2)
-			if cfg.NUM_GPUS > 1:
-				tran = transformer.module
-			print(trantransformer_encoder.layers[0].self_attn(fea,fea,fea)[1][0])
+			tran = transformer.module if cfg.NUM_GPUS > 1 else transformer
+			print(tran.transformer_encoder.layers[0].self_attn(fea,fea,fea)[1][0])
 			print(mask[0])
 			del fea, tran
+
 		inf_cls = classifier(preds[:,random.randint(0, preds.size(1)-1),:].detach())
 
 		# Explicitly declare reduction to mean.
