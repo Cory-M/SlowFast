@@ -18,10 +18,10 @@ def unflatten(tensor, cfg):
 
 def maskout(tensor, cfg):
 	B, CF, FN = tensor.size()
-	bool_mask = torch.rand(B, CF).ge(cfg.TRANSFORMER.RATIO).cuda()
+	bool_mask = torch.rand(B, CF).le(cfg.TRANSFORMER.RATIO).cuda()
 	int_mask = torch.ones(B, CF, FN).cuda()
 	int_mask[bool_mask] = 0
-	return tensor*int_mask, (bool_mask == False)
+	return tensor*int_mask, bool_mask
 
 def compute_score(mask, feature, preds):
 	N = feature[mask].size(0)
