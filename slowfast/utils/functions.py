@@ -25,7 +25,7 @@ def maskout(tensor, cfg):
 
 def compute_score(mask, feature, preds):
 	N = feature[mask].size(0)
-	score = torch.matmul(feature[mask], preds[mask].transpose(0,1))
+	score = torch.matmul(preds[mask], feature[mask].transpose(0,1))
 	target = torch.eye(N).argmax(dim=1).cuda()
 	return score, target
 
