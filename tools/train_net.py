@@ -76,9 +76,14 @@ def train_epoch(train_loader, model, transformer, classifier, optimizer, train_m
 		feature = func.unflatten(feature, cfg)
 
 		masked_feature, mask = func.maskout(feature, cfg)		   
-		preds = transformer(masked_feature)
+		preds = transformer(masked_feature.permute(1,0,2)).permute(1,0,2)
 		score, target = func.compute_score(mask, feature, preds)
 
+#pdb.set_trace()
+		if du.is_master_proc() and (cur_iter + 1) % (5 * cfg.LOG_PERIOD) == 0:
+			fea = masked_feature.permute(1, 0, 2)
+			print(transformer.transformer_encoder.layers[0].self_attn(fea,fea,fea)[1][0])
+			print(mask[0])
 		inf_cls = classifier(preds[:,random.randint(0, preds.size(1)-1),:].detach())
 
 		# Explicitly declare reduction to mean.
@@ -88,7 +93,7 @@ def train_epoch(train_loader, model, transformer, classifier, optimizer, train_m
 		# Compute the loss.
 		loss = loss_fun(score, target)
 		inf_loss = inf_loss_fun(inf_cls, labels)
-		Loss = loss + inf_loss
+		Loss = loss + 0.1 * inf_loss
 
 		# check Nan Loss.
 		misc.check_nan_losses(loss)
