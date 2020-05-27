@@ -4,7 +4,7 @@
 """Optimizer."""
 
 import torch
-
+import pdb
 import slowfast.utils.lr_policy as lr_policy
 
 
@@ -27,12 +27,14 @@ def construct_optimizer(model, cfg, transformer=None, classifier=None):
 	bn_params = []
 	# Non-batchnorm parameters.
 	non_bn_parameters = []
+	cls_parameters = []
+	trans_parameters = []
 	if transformer:
 		for p in transformer.parameters():
-			non_bn_parameters.append(p)
+			trans_parameters.append(p)
 	if classifier:
 		for p in classifier.parameters():
-			non_bn_parameters.append(p)
+			cls_parameters.append(p)
 	for name, p in model.named_parameters():
 		if "bn" in name:
 			bn_params.append(p)
@@ -45,11 +47,12 @@ def construct_optimizer(model, cfg, transformer=None, classifier=None):
 	optim_params = [
 		{"params": bn_params, "weight_decay": cfg.BN.WEIGHT_DECAY},
 		{"params": non_bn_parameters, "weight_decay": cfg.SOLVER.WEIGHT_DECAY},
+		{"params": trans_parameters},
+		{"params": cls_parameters, "lr": 0.1}
 	]
 	# Check all parameters will be passed into optimizer.
-	assert len(list(model.parameters())) == len(non_bn_parameters) + len(bn_params) - len(list(transformer.parameters())) - len(list(classifier.parameters())), "parameter size does not match: {} + {} != {} - {}".format(
+	assert len(list(model.parameters())) == len(non_bn_parameters) + len(bn_params), "parameter size does not match: {} + {} != {}".format(
 		len(non_bn_parameters), len(bn_params), len(list(model.parameters())),
-		len(list(transformer.parameters()))
 	)
 
 	if cfg.SOLVER.OPTIMIZING_METHOD == "sgd":
@@ -92,5 +95,11 @@ def set_lr(optimizer, new_lr):
 		optimizer (optim): the optimizer using to optimize the current network.
 		new_lr (float): the new learning rate to set.
 	"""
-	for param_group in optimizer.param_groups:
-		param_group["lr"] = new_lr
+	for i, param_group in enumerate(optimizer.param_groups):
+		if i < 2: # slowfast backbone
+			param_group["lr"] = new_lr
+		if i == 2: #transformer
+			param_group["lr"] = new_lr * 0.1
+		if i == 3:
+			param_group["lr"] = new_lr * 5
+		
