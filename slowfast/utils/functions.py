@@ -1,5 +1,6 @@
 import torch
 import pdb
+import random
 
 def flatten(tensor, cfg):
 	CF, H = cfg.DATA.CHUNK_FRAMES, cfg.DATA.TRAIN_CROP_SIZE
@@ -18,10 +19,13 @@ def unflatten(tensor, cfg):
 
 def maskout(tensor, cfg):
 	B, CF, FN = tensor.size()
-	bool_mask = torch.rand(B, CF).le(cfg.TRANSFORMER.RATIO).cuda()
-	int_mask = torch.ones(B, CF, FN).cuda()
-	int_mask[bool_mask] = 0
-	return tensor*int_mask, bool_mask
+#	N = int(cfg.TRANSFORMER.RATIO * CF)
+	k = random.randint(0, CF-1)
+	mask = torch.zeros(B, CF)
+	for i in range(B):
+		mask[i, (i+k)%CF] = 1
+	mask = (mask == 1).cuda()
+	return tensor.masked_fill(mask.view(B, CF, 1), 1), mask	
 
 def compute_score(mask, feature, preds):
 	N = feature[mask].size(0)
