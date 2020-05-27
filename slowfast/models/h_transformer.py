@@ -19,7 +19,7 @@ class Encoder(nn.Module):
 		self.layers = clones(layer, N)
 		self.norm = LayerNorm(layer.size)
 		
-	def forward(self, x, mask):
+	def forward(self, x, mask=None):
 		"Pass the input (and mask) through each layer in turn."
 		for layer in self.layers:
 			x = layer(x, mask)
@@ -122,9 +122,10 @@ class EncoderLayer(nn.Module):
 		x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
 		return self.sublayer[1](x, self.feed_forward)
 
-def make_h_trans(N=6, d_model=512, d_ff=2048, h=8, dropout=0.1):
+def build_h_transformer(cfg, N=2, d_ff=2048, h=8, dropout=0.1):
 	"Helper: Construct a model from hyperparameters."
 	c = copy.deepcopy
+	d_model = cfg.MODEL.NUM_FEATURES
 	attn = MultiHeadedAttention(h, d_model)
 	ff = PositionwiseFeedForward(d_model, d_ff, dropout)
 	model = Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), N)

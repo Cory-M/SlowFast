@@ -21,7 +21,7 @@ import slowfast.utils.metrics as metrics
 import slowfast.utils.misc as misc
 import slowfast.utils.functions as func
 from slowfast.datasets import loader
-from slowfast.models import build_model, build_transformer, build_classifier
+from slowfast.models import build_model, build_h_transformer, build_classifier
 from slowfast.utils.meters import AVAMeter, TrainMeter, ValMeter
 
 logger = logging.get_logger(__name__)
@@ -76,16 +76,13 @@ def train_epoch(train_loader, model, transformer, classifier, optimizer, train_m
 		feature = func.unflatten(feature, cfg)
 
 		masked_feature, mask = func.maskout(feature, cfg)		   
-		preds = transformer(masked_feature.permute(1,0,2)).permute(1,0,2)
+		preds = transformer(masked_feature)
+		pdb.set_trace()
 		score, target = func.compute_score(mask, feature, preds)
 
-#pdb.set_trace()
 		if du.is_master_proc() and (cur_iter + 1) % (5 * cfg.LOG_PERIOD) == 0:
-			fea = masked_feature.permute(1, 0, 2)
-			tran = transformer.module if cfg.NUM_GPUS > 1 else transformer
-			print(tran.transformer_encoder.layers[0].self_attn(fea,fea,fea)[1][0])
 			print(mask[0])
-			del fea, tran
+			print(transformer.layers[0].self_attn.attn[0][0])
 
 		inf_cls = classifier(preds[:,random.randint(0, preds.size(1)-1),:].detach())
 
@@ -305,7 +302,7 @@ def train(cfg):
 
 	# Build the video model and print model statistics.
 	model = build_model(cfg)
-	transformer = build_transformer(cfg)
+	transformer = build_h_transformer(cfg)
 	classifier = build_classifier(cfg)
 
 	if du.is_master_proc() and cfg.LOG_MODEL_INFO:
