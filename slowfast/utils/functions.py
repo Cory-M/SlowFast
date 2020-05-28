@@ -20,12 +20,19 @@ def unflatten(tensor, cfg):
 def maskout(tensor, cfg):
 	B, CF, FN = tensor.size()
 #	N = int(cfg.TRANSFORMER.RATIO * CF)
-	k = random.randint(0, CF-1)
+#	k = random.randint(0, CF-1)
+	k = 2
 	mask = torch.zeros(B, CF)
 	for i in range(B):
 		mask[i, (i+k)%CF] = 1
+#	mask[[[i, (i+k)%CF] for i in range(B)]] = 1 
 	mask = (mask == 1).cuda()
 	return tensor.masked_fill(mask.view(B, CF, 1), 1), mask	
+
+#	bool_mask = torch.rand(B, CF).le(cfg.TRANSFORMER.RATIO).cuda()
+#	int_mask = torch.ones(B, CF, FN).cuda()
+#	int_mask[bool_mask] = 0
+#	return tensor*int_mask, bool_mask
 
 def compute_score(mask, feature, preds):
 	N = feature[mask].size(0)

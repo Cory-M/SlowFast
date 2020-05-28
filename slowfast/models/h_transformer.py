@@ -122,7 +122,7 @@ class EncoderLayer(nn.Module):
 		x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
 		return self.sublayer[1](x, self.feed_forward)
 
-def build_h_transformer(cfg, N=2, d_ff=2048, h=8, dropout=0.1):
+def build_h_transformer(cfg, N=2, d_ff=2048, h=8, dropout=0):
 	"Helper: Construct a model from hyperparameters."
 	c = copy.deepcopy
 	d_model = cfg.MODEL.NUM_FEATURES
