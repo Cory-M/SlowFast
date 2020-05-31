@@ -21,7 +21,7 @@ import slowfast.utils.metrics as metrics
 import slowfast.utils.misc as misc
 import slowfast.utils.functions as func
 from slowfast.datasets import loader
-from slowfast.models import build_model, build_h_transformer, build_classifier, build_mask
+from slowfast.models import build_model, build_transformer, build_classifier, build_mask
 from slowfast.utils.meters import AVAMeter, TrainMeter, ValMeter
 
 logger = logging.get_logger(__name__)
@@ -44,6 +44,8 @@ def train_epoch(train_loader, model, transformer, classifier, tMask, optimizer, 
 	model.train()
 	classifier.train()
 	transformer.train()
+	if tMask:
+		tMask.train()
 
 	train_meter.iter_tic()
 	data_size = len(train_loader)
@@ -68,116 +70,104 @@ def train_epoch(train_loader, model, transformer, classifier, tMask, optimizer, 
 		lr = optim.get_epoch_lr(cur_epoch + float(cur_iter) / data_size, cfg)
 		optim.set_lr(optimizer, lr)
 
-		# Tried to forward the same batch for multiple times. 
-		for i in range(1):
-			if cfg.DETECTION.ENABLE:
-				# Compute the predictions.
-				feature = model(inputs, meta["boxes"])
+		if cfg.DETECTION.ENABLE:
+			# Compute the predictions.
+			feature = model(inputs, meta["boxes"])
 	
-			else:
-				# Perform the forward pass.
-				feature = model(inputs)
-			feature = func.unflatten(feature, cfg)
-			masked_feature, mask = func.maskout(feature, cfg)		   
+		else:
+			# Perform the forward pass.
+			feature = model(inputs)
+		feature = func.unflatten(feature, cfg)
+		masked_feature, mask = func.maskout(feature, cfg)		   
+		if cfg.MODEL.TRAINABLE_MASK:
 			masked_feature = tMask(masked_feature, mask)
-#			preds = transformer(masked_feature.permute(1,0,2)).permute(1,0,2)
-			preds = transformer(masked_feature)
-			score, target = func.compute_score(mask, feature, preds)
+		preds = transformer(masked_feature)
+		score, target = func.compute_score(mask, feature, preds)
 	
-#			if du.is_master_proc():# and (cur_iter + 1) % (1 * cfg.LOG_PERIOD) == 0:
-#				src = masked_feature.permute(1,0,2)
-#				with torch.no_grad():
-#					print(transformer.module.transformer_encoder.layers[0].self_attn(src,src,src)[1][0])
-#				del src
-#				print(inputs[1][0])
-#				print(lr)
-#				if cfg.NUM_GPUS > 1:
-#					print(tMask.module.mask)
-#					print(transformer.module.layers[0].self_attn.attn[0][0])
-#					print(transformer.module.layers[0].self_attn.attn[1][0])
-#				else:
-#					print(tMask.mask)
-#					print(transformer.layers[0].self_attn.attn[0][0])
-#					print(transformer.layers[0].self_attn.attn[1][0])
-#				print(mask)
-#				print(feature[mask])
-	#			print(feature[1])
-#				print(preds[mask])
-#				print(score)
-	#			del fea, tran
+		inf_cls = classifier(preds[:,random.randint(0, preds.size(1)-1),:].detach())
 	
-#			inf_cls = classifier(preds[:,random.randint(0, preds.size(1)-1),:].detach())
-			inf_cls = classifier(preds[:,0,:].detach())
-	#		inf_cls = classifier(feature[:,random.randint(0, preds.size(1)-1),:].detach())
+		# Explicitly declare reduction to mean.
+		loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
+		inf_loss_fun = losses.get_loss_func('cross_entropy')(reduction="mean")
 	
-			# Explicitly declare reduction to mean.
-			loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
-			inf_loss_fun = losses.get_loss_func('cross_entropy')(reduction="mean")
-	
-			# Compute the loss.
-			loss = loss_fun(score, target)
-			inf_loss = inf_loss_fun(inf_cls, labels)
-			Loss = loss + 0.1 * inf_loss
-			if du.is_master_proc():
-				print(loss)
-#				print(inf_loss)
-			# check Nan Loss.
-			misc.check_nan_losses(loss)
-			misc.check_nan_losses(inf_loss)
-	
-			# Perform the backward pass.
-			optimizer.zero_grad()
-			Loss.backward()
-			# Update the parameters.
-			optimizer.step()
+		# Compute the loss.
+		loss = loss_fun(score, target)
+		inf_loss = inf_loss_fun(inf_cls, labels)
+		Loss = loss + 0.1 * inf_loss
 
-			if cfg.DETECTION.ENABLE:
+		if cfg.VERBOSE and du.is_master_proc():
+			print(loss)
+			if (cur_iter + 1) % cfg.LOG_PERIOD == 0:
 				if cfg.NUM_GPUS > 1:
-					loss = du.all_reduce([loss])[0]
-				loss = loss.item()
-	
-				train_meter.iter_toc()
-				# Update and log stats.
-				train_meter.update_stats(None, None, None, loss, lr)
-			else:
-				if cfg.DATA.MULTI_LABEL:
-					# Gather all the predictions across all the devices.
-					if cfg.NUM_GPUS > 1:
-						[loss] = du.all_reduce([loss])
-					loss = loss.item()
+					print(tMask.module.mask)
+					print(transformer.module.layers[0].self_attn.attn[0][0])
+					print(transformer.module.layers[0].self_attn.attn[1][0])
 				else:
-					# Compute the errors.
-					num_topks_correct = metrics.topks_correct(inf_cls, labels, (1, 5))
-					top1_err, top5_err = [
-						(1.0 - x / preds.size(0)) * 100.0 for x in num_topks_correct
-					]
-	
-					# Gather all the predictions across all the devices.
-					if cfg.NUM_GPUS > 1:
-						loss, top1_err, top5_err = du.all_reduce(
-							[loss, top1_err, top5_err]
-						)
-					# Copy the stats from GPU to CPU (sync point).
-					loss, top1_err, top5_err = (
-						loss.item(),
-						top1_err.item(),
-						top5_err.item(),
-					)
-	
-#				train_meter.iter_toc()
-				# Update and log stats.
-				train_meter.update_stats(
-					top1_err, top5_err, loss, lr, inputs[0].size(0) * cfg.NUM_GPUS
-				)
-				
-			if du.is_master_proc() and (cur_iter + 1) % cfg.LOG_PERIOD == 0:
-				step = cur_epoch * len(train_loader) + cur_iter
-				top1_err, top5_err, loss = train_meter.get_stats(cur_epoch, cur_iter)
-				tb_logger.add_scalar('train_loss', loss, step)
-				tb_logger.add_scalar('top1_err', top1_err, step)
-				tb_logger.add_scalar('top5_err', top5_err, step)
+					print(tMask.mask)
+					print(transformer.layers[0].self_attn.attn[0][0])
+					print(transformer.layers[0].self_attn.attn[1][0])
+				print(mask)
+				print(feature[mask])
+				print(preds[mask])
+				print(score)
 
-		train_meter.iter_toc()
+		# check Nan Loss.
+		misc.check_nan_losses(loss)
+		misc.check_nan_losses(inf_loss)
+	
+		# Perform the backward pass.
+		optimizer.zero_grad()
+		Loss.backward()
+
+		# Update the parameters.
+		optimizer.step()
+
+		if cfg.DETECTION.ENABLE:
+			if cfg.NUM_GPUS > 1:
+				loss = du.all_reduce([loss])[0]
+			loss = loss.item()
+	
+			train_meter.iter_toc()
+			# Update and log stats.
+			train_meter.update_stats(None, None, None, loss, lr)
+		else:
+			if cfg.DATA.MULTI_LABEL:
+				# Gather all the predictions across all the devices.
+				if cfg.NUM_GPUS > 1:
+					[loss] = du.all_reduce([loss])
+				loss = loss.item()
+			else:
+				# Compute the errors.
+				num_topks_correct = metrics.topks_correct(inf_cls, labels, (1, 5))
+				top1_err, top5_err = [
+					(1.0 - x / preds.size(0)) * 100.0 for x in num_topks_correct
+				]
+	
+				# Gather all the predictions across all the devices.
+				if cfg.NUM_GPUS > 1:
+					loss, top1_err, top5_err = du.all_reduce(
+						[loss, top1_err, top5_err]
+					)
+				# Copy the stats from GPU to CPU (sync point).
+				loss, top1_err, top5_err = (
+					loss.item(),
+					top1_err.item(),
+					top5_err.item(),
+				)
+	
+			# Update and log stats.
+			train_meter.update_stats(
+				top1_err, top5_err, loss, lr, inputs[0].size(0) * cfg.NUM_GPUS
+			)
+			train_meter.iter_toc()
+
+		if du.is_master_proc() and (cur_iter + 1) % cfg.LOG_PERIOD == 0:
+			step = cur_epoch * len(train_loader) + cur_iter
+			top1_err, top5_err, loss = train_meter.get_stats(cur_epoch, cur_iter)
+			tb_logger.add_scalar('train_loss', loss, step)
+			tb_logger.add_scalar('top1_err', top1_err, step)
+			tb_logger.add_scalar('top5_err', top5_err, step)
+
 		train_meter.log_iter_stats(cur_epoch, cur_iter)
 		train_meter.iter_tic()
 
@@ -324,7 +314,7 @@ def train(cfg):
 
 	# Setup logging format.
 	logging.setup_logging(cfg.OUTPUT_DIR)
-	tb_logger = SummaryWriter(os.path.join(cfg.OUTPUT_DIR, 'tb_vis'))
+	tb_logger = SummaryWriter(cfg.OUTPUT_DIR)
 
 	# Print config.
 	logger.info("Train with config:")
@@ -332,9 +322,10 @@ def train(cfg):
 
 	# Build the video model and print model statistics.
 	model = build_model(cfg)
-	transformer = build_h_transformer(cfg)
+	transformer = build_transformer(cfg)
 	classifier = build_classifier(cfg)
-	tMask = build_mask(cfg)
+	tMask = build_mask(cfg) if cfg.MODEL.TRAINABLE_MASK else None
+
 
 	if du.is_master_proc() and cfg.LOG_MODEL_INFO:
 		misc.log_model_info(model, cfg, is_train=True)
@@ -347,7 +338,7 @@ def train(cfg):
 		logger.info("Load from last checkpoint.")
 		last_checkpoint = cu.get_last_checkpoint(cfg.OUTPUT_DIR)
 		checkpoint_epoch = cu.load_checkpoint(
-			last_checkpoint, model, transformer, classifier, 
+			last_checkpoint, model, transformer, classifier, tMask, 
 			cfg.NUM_GPUS > 1, optimizer
 		)
 		start_epoch = checkpoint_epoch + 1
@@ -394,8 +385,8 @@ def train(cfg):
 #		_ = misc.aggregate_split_bn_stats(model)
 #
 #		# Save a checkpoint.
-#		if cu.is_checkpoint_epoch(cur_epoch, cfg.TRAIN.CHECKPOINT_PERIOD):
-#			cu.save_checkpoint(cfg.OUTPUT_DIR, model, transformer, classifier, optimizer, cur_epoch, cfg)
-#		# Evaluate the model on validation set.
+		if cu.is_checkpoint_epoch(cur_epoch, cfg.TRAIN.CHECKPOINT_PERIOD):
+			cu.save_checkpoint(cfg.OUTPUT_DIR, model, transformer, classifier, tMask, optimizer, cur_epoch, cfg)
+		# Evaluate the model on validation set.
 		if misc.is_eval_epoch(cfg, cur_epoch):
 			eval_epoch(val_loader, model, transformer, classifier, val_meter, cur_epoch, cfg, tb_logger)
