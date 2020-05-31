@@ -14,7 +14,9 @@ def flatten(tensor, cfg):
 	return tensor
 			
 def unflatten(tensor, cfg):
-	return tensor.view(cfg.TRAIN.BATCH_SIZE//cfg.NUM_GPUS, -1, cfg.MODEL.NUM_FEATURES)
+	return tensor.view(-1, 
+				cfg.DATA.NUM_FRAMES//cfg.DATA.CHUNK_FRAMES, 
+				cfg.MODEL.NUM_FEATURES)
 
 
 def maskout(tensor, cfg):

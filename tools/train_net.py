@@ -21,13 +21,13 @@ import slowfast.utils.metrics as metrics
 import slowfast.utils.misc as misc
 import slowfast.utils.functions as func
 from slowfast.datasets import loader
-from slowfast.models import build_model, build_h_transformer, build_classifier
+from slowfast.models import build_model, build_h_transformer, build_classifier, build_mask
 from slowfast.utils.meters import AVAMeter, TrainMeter, ValMeter
 
 logger = logging.get_logger(__name__)
 
 
-def train_epoch(train_loader, model, transformer, classifier, optimizer, train_meter, cur_epoch, cfg, tb_logger):
+def train_epoch(train_loader, model, transformer, classifier, tMask, optimizer, train_meter, cur_epoch, cfg, tb_logger):
 	"""
 	Perform the video training for one epoch.
 	Args:
@@ -42,6 +42,9 @@ def train_epoch(train_loader, model, transformer, classifier, optimizer, train_m
 	"""
 	# Enable train mode.
 	model.train()
+	classifier.train()
+	transformer.train()
+
 	train_meter.iter_tic()
 	data_size = len(train_loader)
 
@@ -75,26 +78,32 @@ def train_epoch(train_loader, model, transformer, classifier, optimizer, train_m
 				# Perform the forward pass.
 				feature = model(inputs)
 			feature = func.unflatten(feature, cfg)
-	
 			masked_feature, mask = func.maskout(feature, cfg)		   
+			masked_feature = tMask(masked_feature, mask)
 #			preds = transformer(masked_feature.permute(1,0,2)).permute(1,0,2)
 			preds = transformer(masked_feature)
 			score, target = func.compute_score(mask, feature, preds)
 	
-			if du.is_master_proc():# and (cur_iter + 1) % (1 * cfg.LOG_PERIOD) == 0:
+#			if du.is_master_proc():# and (cur_iter + 1) % (1 * cfg.LOG_PERIOD) == 0:
 #				src = masked_feature.permute(1,0,2)
 #				with torch.no_grad():
 #					print(transformer.module.transformer_encoder.layers[0].self_attn(src,src,src)[1][0])
 #				del src
 #				print(inputs[1][0])
 #				print(lr)
-				print(transformer.module.layers[0].self_attn.attn[0][0])
-				print(transformer.module.layers[0].self_attn.attn[1][0])
-				print(mask)
+#				if cfg.NUM_GPUS > 1:
+#					print(tMask.module.mask)
+#					print(transformer.module.layers[0].self_attn.attn[0][0])
+#					print(transformer.module.layers[0].self_attn.attn[1][0])
+#				else:
+#					print(tMask.mask)
+#					print(transformer.layers[0].self_attn.attn[0][0])
+#					print(transformer.layers[0].self_attn.attn[1][0])
+#				print(mask)
 #				print(feature[mask])
 	#			print(feature[1])
 #				print(preds[mask])
-				print(score)
+#				print(score)
 	#			del fea, tran
 	
 #			inf_cls = classifier(preds[:,random.randint(0, preds.size(1)-1),:].detach())
@@ -121,7 +130,7 @@ def train_epoch(train_loader, model, transformer, classifier, optimizer, train_m
 			Loss.backward()
 			# Update the parameters.
 			optimizer.step()
-#			print('wtf')	
+
 			if cfg.DETECTION.ENABLE:
 				if cfg.NUM_GPUS > 1:
 					loss = du.all_reduce([loss])[0]
@@ -192,6 +201,9 @@ def eval_epoch(val_loader, model, transformer, classifier, val_meter, cur_epoch,
 
 	# Evaluation mode enabled. The running stats would not be updated.
 	model.eval()
+	transformer.eval()
+	classifier.eval()
+	
 	val_meter.iter_tic()
 
 	for cur_iter, (inputs, labels, _, meta) in enumerate(val_loader):
@@ -322,12 +334,13 @@ def train(cfg):
 	model = build_model(cfg)
 	transformer = build_h_transformer(cfg)
 	classifier = build_classifier(cfg)
+	tMask = build_mask(cfg)
 
 	if du.is_master_proc() and cfg.LOG_MODEL_INFO:
 		misc.log_model_info(model, cfg, is_train=True)
 
 	# Construct the optimizer.
-	optimizer = optim.construct_optimizer(model, cfg, transformer, classifier)
+	optimizer = optim.construct_optimizer(model, cfg, transformer, classifier, tMask)
 
 	# Load a checkpoint to resume training if applicable.
 	if cfg.TRAIN.AUTO_RESUME and cu.has_checkpoint(cfg.OUTPUT_DIR):
@@ -371,7 +384,7 @@ def train(cfg):
 		# Shuffle the dataset.
 		loader.shuffle_dataset(train_loader, cur_epoch)
 		# Train for one epoch.
-		train_epoch(train_loader, model, transformer, classifier, optimizer, train_meter, cur_epoch, cfg, tb_logger)
+		train_epoch(train_loader, model, transformer, classifier, tMask, optimizer, train_meter, cur_epoch, cfg, tb_logger)
 
 		# Compute precise BN stats.
 #		if cfg.BN.USE_PRECISE_STATS and len(get_bn_modules(model)) > 0:
