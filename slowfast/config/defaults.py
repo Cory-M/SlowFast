@@ -196,6 +196,9 @@ _C.MODEL.MULTI_PATHWAY_ARCH = ["slowfast"]
 # Dropout rate before final projection in the backbone.
 _C.MODEL.DROPOUT_RATE = 0.5
 
+# Use Trainable mask for transformer
+_C.MODEL.TRAINABLE_MASK = False
+
 # The std to initialize the fc layer(s).
 _C.MODEL.FC_INIT_STD = 0.01
 
@@ -366,6 +369,8 @@ _C.RNG_SEED = 1
 
 # Log period in iters.
 _C.LOG_PERIOD = 10
+
+_C.VERBOSE = False
 
 # If True, log the model info.
 _C.LOG_MODEL_INFO = True
