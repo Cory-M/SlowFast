@@ -81,11 +81,20 @@ def train_epoch(train_loader, model, transformer, classifier, tMask, optimizer, 
 		masked_feature, mask = func.maskout(feature, cfg)		   
 		if cfg.MODEL.TRAINABLE_MASK:
 			masked_feature = tMask(masked_feature, mask)
-		preds = transformer(masked_feature)
+
+		#Applying Transformer on Masked video
+#		preds = transformer(masked_feature)
+
+		# Applying on origin video. Only add Transformer
+		preds = transformer(feature)
+
 		score, target = func.compute_score(mask, feature, preds)
 	
-		inf_cls = classifier(preds[:,random.randint(0, preds.size(1)-1),:].detach())
-	
+#		inf_cls = classifier(preds[:,random.randint(0, preds.size(1)-1),:].detach())
+#		inf_cls = classifier(preds[mask].detach())
+		
+		inf_cls = classifier(preds[mask])
+
 		# Explicitly declare reduction to mean.
 		loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
 		inf_loss_fun = losses.get_loss_func('cross_entropy')(reduction="mean")
@@ -93,7 +102,7 @@ def train_epoch(train_loader, model, transformer, classifier, tMask, optimizer, 
 		# Compute the loss.
 		loss = loss_fun(score, target)
 		inf_loss = inf_loss_fun(inf_cls, labels)
-		Loss = loss + 0.1 * inf_loss
+#		Loss = loss + inf_loss
 
 		if cfg.VERBOSE and du.is_master_proc():
 			print(loss)
@@ -117,7 +126,8 @@ def train_epoch(train_loader, model, transformer, classifier, tMask, optimizer, 
 	
 		# Perform the backward pass.
 		optimizer.zero_grad()
-		Loss.backward()
+#		Loss.backward()
+		inf_loss.backward()
 
 		# Update the parameters.
 		optimizer.step()
@@ -145,11 +155,12 @@ def train_epoch(train_loader, model, transformer, classifier, tMask, optimizer, 
 	
 				# Gather all the predictions across all the devices.
 				if cfg.NUM_GPUS > 1:
-					loss, top1_err, top5_err = du.all_reduce(
-						[loss, top1_err, top5_err]
+					inf_loss, loss, top1_err, top5_err = du.all_reduce(
+						[inf_loss, loss, top1_err, top5_err]
 					)
 				# Copy the stats from GPU to CPU (sync point).
-				loss, top1_err, top5_err = (
+				inf_loss, loss, top1_err, top5_err = (
+					inf_loss.item(),
 					loss.item(),
 					top1_err.item(),
 					top5_err.item(),
@@ -162,8 +173,9 @@ def train_epoch(train_loader, model, transformer, classifier, tMask, optimizer, 
 			train_meter.iter_toc()
 
 		if du.is_master_proc() and (cur_iter + 1) % cfg.LOG_PERIOD == 0:
+			print('inf_loss', inf_loss)
 			step = cur_epoch * len(train_loader) + cur_iter
-			top1_err, top5_err, loss = train_meter.get_stats(cur_epoch, cur_iter)
+			loss, top1_err, top5_err = train_meter.get_stats(cur_epoch, cur_iter)
 			tb_logger.add_scalar('train_loss', loss, step)
 			tb_logger.add_scalar('top1_err', top1_err, step)
 			tb_logger.add_scalar('top5_err', top5_err, step)
@@ -230,7 +242,7 @@ def eval_epoch(val_loader, model, transformer, classifier, val_meter, cur_epoch,
 		else:
 			feature = func.unflatten(model(func.flatten(inputs, cfg)), cfg)
 			
-			masked_feature, mask = func.maskout(feature, cfg)
+			_, mask = func.maskout(feature, cfg)
 			preds = transformer(feature)
 			score, target = func.compute_score(mask, feature, preds)
 
@@ -262,17 +274,17 @@ def eval_epoch(val_loader, model, transformer, classifier, val_meter, cur_epoch,
 				loss, top1_err, top5_err, inputs[0].size(0) * cfg.NUM_GPUS
 			)
 
-		if du.is_master_proc() and (cur_iter + 1) % cfg.LOG_PERIOD == 0:
-			step = cur_epoch * len(val_loader) + cur_iter
-			top1_err, top5_err, loss = val_meter.get_stats(cur_epoch, cur_iter)
-			tb_logger.add_scalar('val_loss', loss, step)
-			tb_logger.add_scalar('val_top1_err', top1_err, step)
-			tb_logger.add_scalar('val_top5_err', top5_err, step)
-
 		val_meter.log_iter_stats(cur_epoch, cur_iter)
 		val_meter.iter_tic()
 
 	# Log epoch stats.
+	if du.is_master_proc():
+		step = cur_epoch * len(val_loader)
+		loss, top1_err, top5_err = val_meter.get_epoch_stats(cur_epoch)
+		tb_logger.add_scalar('val_loss', loss, step)
+		tb_logger.add_scalar('val_top1_err', top1_err, step)
+		tb_logger.add_scalar('val_top5_err', top5_err, step)
+
 	val_meter.log_epoch_stats(cur_epoch)
 	val_meter.reset()
 
@@ -378,12 +390,12 @@ def train(cfg):
 		train_epoch(train_loader, model, transformer, classifier, tMask, optimizer, train_meter, cur_epoch, cfg, tb_logger)
 
 		# Compute precise BN stats.
-#		if cfg.BN.USE_PRECISE_STATS and len(get_bn_modules(model)) > 0:
-#			calculate_and_update_precise_bn(
-#				train_loader, model, cfg, cfg.BN.NUM_BATCHES_PRECISE
-#			)
-#		_ = misc.aggregate_split_bn_stats(model)
-#
+		if cfg.BN.USE_PRECISE_STATS and len(get_bn_modules(model)) > 0:
+			calculate_and_update_precise_bn(
+				train_loader, model, cfg, cfg.BN.NUM_BATCHES_PRECISE
+			)
+		_ = misc.aggregate_split_bn_stats(model)
+
 #		# Save a checkpoint.
 		if cu.is_checkpoint_epoch(cur_epoch, cfg.TRAIN.CHECKPOINT_PERIOD):
 			cu.save_checkpoint(cfg.OUTPUT_DIR, model, transformer, classifier, tMask, optimizer, cur_epoch, cfg)
