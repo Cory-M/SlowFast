@@ -265,9 +265,9 @@ def eval_epoch(val_loader, model, transformer, classifier, val_meter, cur_epoch,
 		if du.is_master_proc() and (cur_iter + 1) % cfg.LOG_PERIOD == 0:
 			step = cur_epoch * len(val_loader) + cur_iter
 			top1_err, top5_err, loss = val_meter.get_stats(cur_epoch, cur_iter)
-			tb_logger.add_scalar('train_loss', loss, step)
-			tb_logger.add_scalar('top1_err', top1_err, step)
-			tb_logger.add_scalar('top5_err', top5_err, step)
+			tb_logger.add_scalar('val_loss', loss, step)
+			tb_logger.add_scalar('val_top1_err', top1_err, step)
+			tb_logger.add_scalar('val_top5_err', top5_err, step)
 
 		val_meter.log_iter_stats(cur_epoch, cur_iter)
 		val_meter.iter_tic()
