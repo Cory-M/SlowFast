@@ -672,6 +672,9 @@ class ValMeter(object):
 			stats["top5_err"] = self.mb_top5_err.get_win_median()
 		logging.log_json_stats(stats)
 
+	def get_epoch_stats(self, cur_epoch):
+		return self.loss_total / self.num_samples, self.num_top1_mis / self.num_samples, self.num_top5_mis / self.num_samples 
+
 	def log_epoch_stats(self, cur_epoch):
 		"""
 		Log the stats of the current epoch.

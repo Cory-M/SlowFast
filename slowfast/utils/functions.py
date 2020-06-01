@@ -29,7 +29,10 @@ def maskout(tensor, cfg):
 		mask[i, (i+k)%CF] = 1
 #	mask[[[i, (i+k)%CF] for i in range(B)]] = 1 
 	mask = (mask == 1).cuda()
-	return tensor.masked_fill(mask.view(B, CF, 1), 1), mask	
+	if cfg.MODEL.TRAINABLE_MASK:
+		return tensor.masked_fill(mask.view(B, CF, 1), 0), mask	
+	else:
+		return tensor.masked_fill(mask.view(B, CF, 1), 1), mask
 
 #	bool_mask = torch.rand(B, CF).le(cfg.TRANSFORMER.RATIO).cuda()
 #	int_mask = torch.ones(B, CF, FN).cuda()
