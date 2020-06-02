@@ -223,8 +223,8 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, tb_logger):
 	if du.is_master_proc() and (cur_iter + 1) % cfg.LOG_PERIOD == 0:
 		step = cur_epoch * len(val_loader) + cur_iter
 		top1_err, top5_err = val_meter.get_stats(cur_epoch)
-		tb_logger.add_scalar('top1_err', top1_err, step)
-		tb_logger.add_scalar('top5_err', top5_err, step)
+		tb_logger.add_scalar('val_top1_err', top1_err, step)
+		tb_logger.add_scalar('val_top5_err', top5_err, step)
 
 
 def calculate_and_update_precise_bn(loader, model, num_iters=200):
