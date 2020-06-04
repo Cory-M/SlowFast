@@ -8,6 +8,7 @@ import pprint
 import torch
 from fvcore.nn.precise_bn import get_bn_modules, update_bn_stats
 from torch.utils.tensorboard import SummaryWriter
+import pdb
 
 import slowfast.models.losses as losses
 import slowfast.models.optimizer as optim
@@ -17,13 +18,13 @@ import slowfast.utils.logging as logging
 import slowfast.utils.metrics as metrics
 import slowfast.utils.misc as misc
 from slowfast.datasets import loader
-from slowfast.models import build_model
+from slowfast.models import build_model, build_classifier, build_estimator
 from slowfast.utils.meters import AVAMeter, TrainMeter, ValMeter
 
 logger = logging.get_logger(__name__)
 
 
-def train_epoch(train_loader, model, optimizer, train_meter, cur_epoch, cfg, tb_logger):
+def train_epoch(train_loader, model, estimator, classifier, optimizer, train_meter, cur_epoch, cfg, tb_logger):
 	"""
 	Perform the video training for one epoch.
 	Args:
@@ -38,6 +39,9 @@ def train_epoch(train_loader, model, optimizer, train_meter, cur_epoch, cfg, tb_
 	"""
 	# Enable train mode.
 	model.train()
+	estimator.train()
+	classifier.train()
+	
 	train_meter.iter_tic()
 	data_size = len(train_loader)
 
@@ -60,69 +64,49 @@ def train_epoch(train_loader, model, optimizer, train_meter, cur_epoch, cfg, tb_
 		lr = optim.get_epoch_lr(cur_epoch + float(cur_iter) / data_size, cfg)
 		optim.set_lr(optimizer, lr)
 
-		if cfg.DETECTION.ENABLE:
-			# Compute the predictions.
-			preds = model(inputs, meta["boxes"])
+		# Perform the forward pass.
+		M, Y = model(inputs)
+		M_fake = torch.cat((M[1:], M[0].unsqueeze(0)), dim=0)
 
-		else:
-			# Perform the forward pass.
-			preds = model(inputs)
+		loss = estimator(Y, M, M_fake)
+		preds = classifier(Y.detach())
 
-		# Explicitly declare reduction to mean.
-		loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
+		inf_loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
+		inf_loss = inf_loss_fun(preds, labels)
 
-		# Compute the loss.
-		loss = loss_fun(preds, labels)
-
-		# check Nan Loss.
-		misc.check_nan_losses(loss)
+		Loss = loss + inf_loss
 
 		# Perform the backward pass.
 		optimizer.zero_grad()
-		loss.backward()
+		Loss.backward()
 		# Update the parameters.
 		optimizer.step()
 
-		if cfg.DETECTION.ENABLE:
-			if cfg.NUM_GPUS > 1:
-				loss = du.all_reduce([loss])[0]
-			loss = loss.item()
+		top1_err, top5_err = None, None
+		# Compute the errors.
+		num_topks_correct = metrics.topks_correct(preds, labels, (1, 5))
+		top1_err, top5_err = [
+			(1.0 - x / preds.size(0)) * 100.0 for x in num_topks_correct
+		]
 
-			train_meter.iter_toc()
-			# Update and log stats.
-			train_meter.update_stats(None, None, None, loss, lr)
-		else:
-			top1_err, top5_err = None, None
-			if cfg.DATA.MULTI_LABEL:
-				# Gather all the predictions across all the devices.
-				if cfg.NUM_GPUS > 1:
-					[loss] = du.all_reduce([loss])
-				loss = loss.item()
-			else:
-				# Compute the errors.
-				num_topks_correct = metrics.topks_correct(preds, labels, (1, 5))
-				top1_err, top5_err = [
-					(1.0 - x / preds.size(0)) * 100.0 for x in num_topks_correct
-				]
-
-				# Gather all the predictions across all the devices.
-				if cfg.NUM_GPUS > 1:
-					loss, top1_err, top5_err = du.all_reduce(
-						[loss, top1_err, top5_err]
-					)
-
-				# Copy the stats from GPU to CPU (sync point).
-				loss, top1_err, top5_err = (
-					loss.item(),
-					top1_err.item(),
-					top5_err.item(),
-				)
-
-			train_meter.iter_toc()
-			# Update and log stats.
-			train_meter.update_stats(
-				top1_err, top5_err, loss, lr, inputs[0].size(0) * cfg.NUM_GPUS
+		# Gather all the predictions across all the devices.
+		if cfg.NUM_GPUS > 1:
+			loss, top1_err, top5_err = du.all_reduce(
+				[loss, top1_err, top5_err]
 			)
+
+		# Copy the stats from GPU to CPU (sync point).
+		loss, top1_err, top5_err = (
+			loss.item(),
+			top1_err.item(),
+			top5_err.item(),
+		)
+
+		train_meter.iter_toc()
+		# Update and log stats.
+		train_meter.update_stats(
+			top1_err, top5_err, loss, lr, inputs[0].size(0) * cfg.NUM_GPUS
+		)
 
 		train_meter.log_iter_stats(cur_epoch, cur_iter)
 		train_meter.iter_tic()
@@ -140,7 +124,7 @@ def train_epoch(train_loader, model, optimizer, train_meter, cur_epoch, cfg, tb_
 
 
 @torch.no_grad()
-def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, tb_logger):
+def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logger):
 	"""
 	Evaluate the model on the val set.
 	Args:
@@ -154,6 +138,7 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, tb_logger):
 
 	# Evaluation mode enabled. The running stats would not be updated.
 	model.eval()
+	classifier.eval()
 	val_meter.iter_tic()
 
 	for cur_iter, (inputs, labels, _, meta) in enumerate(val_loader):
@@ -171,48 +156,27 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, tb_logger):
 			else:
 				meta[key] = val.cuda(non_blocking=True)
 
-		if cfg.DETECTION.ENABLE:
-			# Compute the predictions.
-			preds = model(inputs, meta["boxes"])
+		Y, M = model(inputs)
+		preds = classifier(Y)
 
-			preds = preds.cpu()
-			ori_boxes = meta["ori_boxes"].cpu()
-			metadata = meta["metadata"].cpu()
+		# Compute the errors.
+		num_topks_correct = metrics.topks_correct(preds, labels, (1, 5))
 
-			if cfg.NUM_GPUS > 1:
-				preds = torch.cat(du.all_gather_unaligned(preds), dim=0)
-				ori_boxes = torch.cat(du.all_gather_unaligned(ori_boxes), dim=0)
-				metadata = torch.cat(du.all_gather_unaligned(metadata), dim=0)
+		# Combine the errors across the GPUs.
+		top1_err, top5_err = [
+			(1.0 - x / preds.size(0)) * 100.0 for x in num_topks_correct
+		]
+		if cfg.NUM_GPUS > 1:
+			top1_err, top5_err = du.all_reduce([top1_err, top5_err])
 
-			val_meter.iter_toc()
-			# Update and log stats.
-			val_meter.update_stats(preds.cpu(), ori_boxes.cpu(), metadata.cpu())
-		else:
-			preds = model(inputs)
+		# Copy the errors from GPU to CPU (sync point).
+		top1_err, top5_err = top1_err.item(), top5_err.item()
 
-			if cfg.DATA.MULTI_LABEL:
-				if cfg.NUM_GPUS > 1:
-					preds, labels = du.all_gather([preds, labels])
-				val_meter.update_predictions(preds, labels)
-			else:
-				# Compute the errors.
-				num_topks_correct = metrics.topks_correct(preds, labels, (1, 5))
-
-				# Combine the errors across the GPUs.
-				top1_err, top5_err = [
-					(1.0 - x / preds.size(0)) * 100.0 for x in num_topks_correct
-				]
-				if cfg.NUM_GPUS > 1:
-					top1_err, top5_err = du.all_reduce([top1_err, top5_err])
-
-				# Copy the errors from GPU to CPU (sync point).
-				top1_err, top5_err = top1_err.item(), top5_err.item()
-
-				val_meter.iter_toc()
-				# Update and log stats.
-				val_meter.update_stats(
-					top1_err, top5_err, inputs[0].size(0) * cfg.NUM_GPUS
-				)
+		val_meter.iter_toc()
+		# Update and log stats.
+		val_meter.update_stats(
+			top1_err, top5_err, inputs[0].size(0) * cfg.NUM_GPUS
+		)
 
 		val_meter.log_iter_stats(cur_epoch, cur_iter)
 		val_meter.iter_tic()
@@ -272,6 +236,9 @@ def train(cfg):
 
 	# Build the video model and print model statistics.
 	model = build_model(cfg)
+	estimator = build_estimator(cfg)
+	classifier = build_classifier(cfg)
+
 	if du.is_master_proc() and cfg.LOG_MODEL_INFO:
 		misc.log_model_info(model, cfg, is_train=True)
 
@@ -283,18 +250,20 @@ def train(cfg):
 		logger.info("Load from last checkpoint.")
 		last_checkpoint = cu.get_last_checkpoint(cfg.OUTPUT_DIR)
 		checkpoint_epoch = cu.load_checkpoint(
-			last_checkpoint, model, cfg.NUM_GPUS > 1, optimizer
+			last_checkpoint, 
+			[model, estimator, classifier], 
+			cfg.NUM_GPUS > 1, 
+			optimizer
 		)
 		start_epoch = checkpoint_epoch + 1
 	elif cfg.TRAIN.CHECKPOINT_FILE_PATH != "":
 		logger.info("Load from given checkpoint file.")
 		checkpoint_epoch = cu.load_checkpoint(
 			cfg.TRAIN.CHECKPOINT_FILE_PATH,
-			model,
+			[model, estimator, classifier],
 			cfg.NUM_GPUS > 1,
 			optimizer,
 			inflation=cfg.TRAIN.CHECKPOINT_INFLATE,
-			convert_from_caffe2=cfg.TRAIN.CHECKPOINT_TYPE == "caffe2",
 		)
 		start_epoch = checkpoint_epoch + 1
 	else:
@@ -305,12 +274,8 @@ def train(cfg):
 	val_loader = loader.construct_loader(cfg, "val")
 
 	# Create meters.
-	if cfg.DETECTION.ENABLE:
-		train_meter = AVAMeter(len(train_loader), cfg, mode="train")
-		val_meter = AVAMeter(len(val_loader), cfg, mode="val")
-	else:
-		train_meter = TrainMeter(len(train_loader), cfg)
-		val_meter = ValMeter(len(val_loader), cfg)
+	train_meter = TrainMeter(len(train_loader), cfg)
+	val_meter = ValMeter(len(val_loader), cfg)
 
 	# Perform the training loop.
 	logger.info("Start epoch: {}".format(start_epoch + 1))
@@ -319,7 +284,7 @@ def train(cfg):
 		# Shuffle the dataset.
 		loader.shuffle_dataset(train_loader, cur_epoch)
 		# Train for one epoch.
-		train_epoch(train_loader, model, optimizer, train_meter, cur_epoch, cfg, tb_logger)
+		train_epoch(train_loader, model, estimator, classifier, optimizer, train_meter, cur_epoch, cfg, tb_logger)
 
 		# Compute precise BN stats.
 		if cfg.BN.USE_PRECISE_STATS and len(get_bn_modules(model)) > 0:
@@ -330,7 +295,11 @@ def train(cfg):
 
 		# Save a checkpoint.
 		if cu.is_checkpoint_epoch(cur_epoch, cfg.TRAIN.CHECKPOINT_PERIOD):
-			cu.save_checkpoint(cfg.OUTPUT_DIR, model, optimizer, cur_epoch, cfg)
+			cu.save_checkpoint(cfg.OUTPUT_DIR, 
+						[model, estimator, classifier], 
+						optimizer, 
+						cur_epoch, 
+						cfg)
 		# Evaluate the model on validation set.
 		if misc.is_eval_epoch(cfg, cur_epoch):
-			eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, tb_logger)
+			eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logger)

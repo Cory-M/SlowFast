@@ -11,6 +11,16 @@ from . import custom_config
 # -----------------------------------------------------------------------------
 _C = CfgNode()
 
+_C.MI = CfgNode()
+
+_C.MI.SHALLOW = ""
+_C.MI.M_CHANNEL = 80
+_C.MI.V_CHANNEL = 512
+_C.MI.INTERM_DIM = 800
+
+_C.CLSF = CfgNode()
+
+_C.CLSF.NUM_HIDDEN = 1000
 
 # ---------------------------------------------------------------------------- #
 # Batch norm options
