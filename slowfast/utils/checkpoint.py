@@ -89,7 +89,7 @@ def is_checkpoint_epoch(cur_epoch, checkpoint_period):
     return (cur_epoch + 1) % checkpoint_period == 0
 
 
-def save_checkpoint(path_to_job, model, optimizer, epoch, cfg):
+def save_checkpoint(path_to_job, model_dict, optimizer, epoch, cfg):
     """
     Save a checkpoint.
     Args:
@@ -104,11 +104,13 @@ def save_checkpoint(path_to_job, model, optimizer, epoch, cfg):
     # Ensure that the checkpoint dir exists.
     PathManager.mkdirs(get_checkpoint_dir(path_to_job))
     # Omit the DDP wrapper in the multi-gpu setting.
-    sd = model.module.state_dict() if cfg.NUM_GPUS > 1 else model.state_dict()
+    sd_dict = {}
+    for k, v in model_dict.items():
+        sd_dict[k] = v.module.state_dict() if cfg.NUM_GPUS > 1 else v.state_dict()
     # Record the state.
     checkpoint = {
         "epoch": epoch,
-        "model_state": sd,
+        "model_state": sd_dict,
         "optimizer_state": optimizer.state_dict(),
         "cfg": cfg.dump(),
     }
@@ -154,7 +156,7 @@ def inflate_weight(state_dict_2d, state_dict_3d):
 
 def load_checkpoint(
     path_to_checkpoint,
-    model,
+    model_dict,
     data_parallel=True,
     optimizer=None,
     inflation=False,
@@ -179,71 +181,31 @@ def load_checkpoint(
         path_to_checkpoint
     ), "Checkpoint '{}' not found".format(path_to_checkpoint)
     # Account for the DDP wrapper in the multi-gpu setting.
-    ms = model.module if data_parallel else model
-    if convert_from_caffe2:
-        with PathManager.open(path_to_checkpoint, "rb") as f:
-            caffe2_checkpoint = pickle.load(f, encoding="latin1")
-        state_dict = OrderedDict()
-        name_convert_func = get_name_convert_func()
-        for key in caffe2_checkpoint["blobs"].keys():
-            converted_key = name_convert_func(key)
-            if converted_key in ms.state_dict():
-                if caffe2_checkpoint["blobs"][key].shape == tuple(
-                    ms.state_dict()[converted_key].shape
-                ):
-                    state_dict[converted_key] = torch.tensor(
-                        caffe2_checkpoint["blobs"][key]
-                    ).clone()
-                    logger.info(
-                        "{}: {} => {}: {}".format(
-                            key,
-                            caffe2_checkpoint["blobs"][key].shape,
-                            converted_key,
-                            tuple(ms.state_dict()[converted_key].shape),
-                        )
-                    )
-                else:
-                    logger.warn(
-                        "!! {}: {} does not match {}: {}".format(
-                            key,
-                            caffe2_checkpoint["blobs"][key].shape,
-                            converted_key,
-                            tuple(ms.state_dict()[converted_key].shape),
-                        )
-                    )
-            else:
-                if not any(
-                    prefix in key for prefix in ["momentum", "lr", "model_iter"]
-                ):
-                    logger.warn(
-                        "!! {}: can not be converted, got {}".format(
-                            key, converted_key
-                        )
-                    )
-        ms.load_state_dict(state_dict, strict=False)
-        epoch = -1
+    ms_dict = {}
+    for k, v in model_dict.items():
+        ms_dict[k] = v.module if data_parallel else v
+    # Load the checkpoint on CPU to avoid GPU mem spike.
+    with PathManager.open(path_to_checkpoint, "rb") as f:
+        checkpoint = torch.load(f, map_location="cpu")
+    if inflation:
+        # Try to inflate the model.
+        model_state_dict_3d = (
+            model.module.state_dict()
+            if data_parallel
+            else model.state_dict()
+        )
+        inflated_model_dict = inflate_weight(
+            checkpoint["model_state"], model_state_dict_3d
+        )
+        ms.load_state_dict(inflated_model_dict, strict=False)
     else:
-        # Load the checkpoint on CPU to avoid GPU mem spike.
-        with PathManager.open(path_to_checkpoint, "rb") as f:
-            checkpoint = torch.load(f, map_location="cpu")
-        if inflation:
-            # Try to inflate the model.
-            model_state_dict_3d = (
-                model.module.state_dict()
-                if data_parallel
-                else model.state_dict()
-            )
-            inflated_model_dict = inflate_weight(
-                checkpoint["model_state"], model_state_dict_3d
-            )
-            ms.load_state_dict(inflated_model_dict, strict=False)
-        else:
-            ms.load_state_dict(checkpoint["model_state"])
-            # Load the optimizer state (commonly not done when fine-tuning)
-            if optimizer:
-                optimizer.load_state_dict(checkpoint["optimizer_state"])
-        if "epoch" in checkpoint.keys():
-            epoch = checkpoint["epoch"]
-        else:
-            epoch = -1
+        for k, ms in ms_dict.items():
+            ms.load_state_dict(checkpoint["model_state"][k])
+        # Load the optimizer state (commonly not done when fine-tuning)
+        if optimizer:
+            optimizer.load_state_dict(checkpoint["optimizer_state"])
+    if "epoch" in checkpoint.keys():
+        epoch = checkpoint["epoch"]
+    else:
+        epoch = -1
     return epoch

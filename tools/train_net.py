@@ -155,8 +155,8 @@ def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logg
 					val[i] = val[i].cuda(non_blocking=True)
 			else:
 				meta[key] = val.cuda(non_blocking=True)
-
-		Y, M = model(inputs)
+		
+		M, Y = model(inputs)
 		preds = classifier(Y)
 
 		# Compute the errors.
@@ -243,7 +243,7 @@ def train(cfg):
 		misc.log_model_info(model, cfg, is_train=True)
 
 	# Construct the optimizer.
-	optimizer = optim.construct_optimizer(model, cfg)
+	optimizer = optim.construct_optimizer(model, cfg, estimator, classifier)
 
 	# Load a checkpoint to resume training if applicable.
 	if cfg.TRAIN.AUTO_RESUME and cu.has_checkpoint(cfg.OUTPUT_DIR):
@@ -251,7 +251,9 @@ def train(cfg):
 		last_checkpoint = cu.get_last_checkpoint(cfg.OUTPUT_DIR)
 		checkpoint_epoch = cu.load_checkpoint(
 			last_checkpoint, 
-			[model, estimator, classifier], 
+			{'model': model, 
+			'estimator': estimator, 
+			'classifier': classifier}, 
 			cfg.NUM_GPUS > 1, 
 			optimizer
 		)
@@ -260,7 +262,9 @@ def train(cfg):
 		logger.info("Load from given checkpoint file.")
 		checkpoint_epoch = cu.load_checkpoint(
 			cfg.TRAIN.CHECKPOINT_FILE_PATH,
-			[model, estimator, classifier],
+			{'model': model, 
+			'estimator': estimator, 
+			'classifier': classifier}, 
 			cfg.NUM_GPUS > 1,
 			optimizer,
 			inflation=cfg.TRAIN.CHECKPOINT_INFLATE,
@@ -296,7 +300,9 @@ def train(cfg):
 		# Save a checkpoint.
 		if cu.is_checkpoint_epoch(cur_epoch, cfg.TRAIN.CHECKPOINT_PERIOD):
 			cu.save_checkpoint(cfg.OUTPUT_DIR, 
-						[model, estimator, classifier], 
+						{'model': model, 
+						'estimator': estimator, 
+						'classifier': classifier}, 
 						optimizer, 
 						cur_epoch, 
 						cfg)
