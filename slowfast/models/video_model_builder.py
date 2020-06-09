@@ -379,21 +379,24 @@ class SlowFast(nn.Module):
 		x = self.s1(x) # [B, 64, 4, 56, 56], [B, 8, 32, 56, 56]
 		y = self.s1_fuse(x) #[B, 80, 4, 56, 56], [B, 8, 32, 56, 56]
 		x = self.s2(y)
-		x = self.s2_fuse(x)
+		x = self.s2_fuse(x) #[B, 320, 4, 56, 56], [B, 32, 32, 56, 56]
 		for pathway in range(self.num_pathways):
 			pool = getattr(self, "pathway{}_pool".format(pathway))
-			x[pathway] = pool(x[pathway])
+			x[pathway] = pool(x[pathway]) #MaxPool
+			# [B, 320. 4. 56, 56], [B, 32, 32, 56, 56]	
 		x = self.s3(x)
-		x = self.s3_fuse(x)
-		x = self.s4(x)
-		x = self.s4_fuse(x)
-		x = self.s5(x)
+		z = self.s3_fuse(x) #[B, 640, 4, 28, 28], [B, 64, 32, 28, 28]
+		x = self.s4(z)
+		x = self.s4_fuse(x) #[B, 1280, 4, 14, 14], [B, 128, 32, 14, 14]
+		x = self.s5(x) # [B, 2048, 4, 7, 7], [256, 32, 7, 7]
 		if self.enable_detection:
 			x = self.head(x, bboxes)
 		else:
 			x = self.head(x)
 		if self.cfg.MI.SHALLOW == 's1':
 			return y[0], x
+		if self.cfg.MI.SHALLOW == 's3':
+			return z[0], x
 		return x
 
 
@@ -576,12 +579,10 @@ class ResNet(nn.Module):
 
 	def forward(self, x, bboxes=None):
 		x = self.s1(x) # [B, 64, 4, 56, 56]
-		pdb.set_trace()
 		x = self.s2(x) # [1, 256, 4, 56, 56]
 		for pathway in range(self.num_pathways):
 			pool = getattr(self, "pathway{}_pool".format(pathway))
 			x[pathway] = pool(x[pathway])
-		pdb.set_trace() # [B, 256, 4, 56, 56]
 		x = self.s3(x) # [B, 512, 4, 28, 28]
 		x = self.s4(x) # [B, 1024, 4, 14, 14] 
 		x = self.s5(x) # [B, 2048, 4, 7, 7]
