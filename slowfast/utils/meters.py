@@ -689,8 +689,7 @@ class ValMeter(object):
 			stats["min_top5_err"] = self.min_top5_err
 
 		logging.log_json_stats(stats)
-	def get_stats(self, cur_epoch):
-		return self.num_top1_mis / self.num_samples, self.num_top5_mis / self.num_samples
+		return top1_err, top5_err
 
 
 def get_map(preds, labels):

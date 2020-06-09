@@ -182,11 +182,10 @@ def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logg
 		val_meter.iter_tic()
 
 	# Log epoch stats.
-	val_meter.log_epoch_stats(cur_epoch)
+	top1_err, top5_err = val_meter.log_epoch_stats(cur_epoch)
 	val_meter.reset()
 	if du.is_master_proc():
 		step = cur_epoch * len(val_loader) + cur_iter
-		top1_err, top5_err = val_meter.get_stats(cur_epoch)
 		tb_logger.add_scalar('val_top1_err', top1_err, step)
 		tb_logger.add_scalar('val_top5_err', top5_err, step)
 
