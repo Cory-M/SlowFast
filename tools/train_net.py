@@ -48,6 +48,9 @@ def train_epoch(train_loader, model, estimator, classifier, optimizer, train_met
 	for cur_iter, (inputs, labels, _, meta) in enumerate(train_loader):
 		# Transfer the data to the current GPU device.
 		if isinstance(inputs, (list,)):
+			num_pathway = len(inputs[0])
+			inputs = [torch.cat([x[i] for x in inputs], dim=0) 
+							for i in range(num_pathway)]
 			for i in range(len(inputs)):
 				inputs[i] = inputs[i].cuda(non_blocking=True)
 		else:
@@ -68,8 +71,12 @@ def train_epoch(train_loader, model, estimator, classifier, optimizer, train_met
 		M, Y = model(inputs)
 		M_fake = torch.cat((M[1:], M[0].unsqueeze(0)), dim=0)
 
+		#TODO
+		bs = int(Y.size(0) / 2)
+		Y = torch.cat([Y[:bs], Y[:bs]], dim=0)
+
 		loss = estimator(Y, M, M_fake)
-		preds = classifier(Y.detach())
+		preds = classifier(Y[:bs].detach())
 
 		inf_loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
 		inf_loss = inf_loss_fun(preds, labels)
@@ -144,6 +151,7 @@ def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logg
 	for cur_iter, (inputs, labels, _, meta) in enumerate(val_loader):
 		# Transferthe data to the current GPU device.
 		if isinstance(inputs, (list,)):
+			inputs = inputs[0]
 			for i in range(len(inputs)):
 				inputs[i] = inputs[i].cuda(non_blocking=True)
 		else:
@@ -202,6 +210,9 @@ def calculate_and_update_precise_bn(loader, model, num_iters=200):
 	def _gen_loader():
 		for inputs, _, _, _ in loader:
 			if isinstance(inputs, (list,)):
+				num_pathway = len(inputs[0])
+				inputs = [torch.cat([x[i] for x in inputs], dim=0) 
+								for i in range(num_pathway)]
 				for i in range(len(inputs)):
 					inputs[i] = inputs[i].cuda(non_blocking=True)
 			else:

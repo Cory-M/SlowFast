@@ -184,6 +184,7 @@ class Kinetics(torch.utils.data.Dataset):
 				target_fps=self.cfg.DATA.TARGET_FPS,
 				backend=self.cfg.DATA.DECODING_BACKEND,
 				max_spatial_scale=max_scale,
+				mi_num_clips=self.cfg.MI.NUM_CLIP,
 			)
 
 			# If decoding failed (wrong format, video is too short, and etc),
@@ -191,27 +192,32 @@ class Kinetics(torch.utils.data.Dataset):
 			if frames is None:
 				index = random.randint(0, len(self._path_to_videos) - 1)
 				continue
+			
+			_frames = []
+			for frame in frames:
+				# Perform color normalization.
+				frame = utils.tensor_normalize(
+					frame, self.cfg.DATA.MEAN, self.cfg.DATA.STD
+				)
+				# T H W C -> C T H W.
+				frame = frame.permute(3, 0, 1, 2)
+				# Perform data augmentation.
+				frame = utils.spatial_sampling(
+					frame,
+					spatial_idx=spatial_sample_index,
+					min_scale=min_scale,
+					max_scale=max_scale,
+					crop_size=crop_size,
+					random_horizontal_flip=self.cfg.DATA.RANDOM_FLIP,
+					inverse_uniform_sampling=self.cfg.DATA.INV_UNIFORM_SAMPLE,
+				)
+	
+				label = self._labels[index]
+				frame = utils.pack_pathway_output(self.cfg, frame)
+				_frames.append(frame)
 
-			# Perform color normalization.
-			frames = utils.tensor_normalize(
-				frames, self.cfg.DATA.MEAN, self.cfg.DATA.STD
-			)
-			# T H W C -> C T H W.
-			frames = frames.permute(3, 0, 1, 2)
-			# Perform data augmentation.
-			frames = utils.spatial_sampling(
-				frames,
-				spatial_idx=spatial_sample_index,
-				min_scale=min_scale,
-				max_scale=max_scale,
-				crop_size=crop_size,
-				random_horizontal_flip=self.cfg.DATA.RANDOM_FLIP,
-				inverse_uniform_sampling=self.cfg.DATA.INV_UNIFORM_SAMPLE,
-			)
+			return _frames, label, index, {}
 
-			label = self._labels[index]
-			frames = utils.pack_pathway_output(self.cfg, frames)
-			return frames, label, index, {}
 		else:
 			raise RuntimeError(
 				"Failed to fetch video after {} retries.".format(

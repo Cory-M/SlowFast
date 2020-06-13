@@ -275,6 +275,7 @@ def decode(
 	target_fps=30,
 	backend="pyav",
 	max_spatial_scale=0,
+	mi_num_clips=1
 ):
 	"""
 	Decode the video and perform temporal sampling.
@@ -336,13 +337,15 @@ def decode(
 	# Return None if the frames was not decoded successfully.
 	if frames is None or frames.size(0) == 0:
 		return None
-
-	start_idx, end_idx = get_start_end_idx(
-		frames.shape[0],
-		num_frames * sampling_rate * fps / target_fps,
-		clip_idx if decode_all_video else 0,
-		num_clips if decode_all_video else 1,
-	)
-	# Perform temporal sampling from the decoded video.
-	frames = temporal_sampling(frames, start_idx, end_idx, num_frames)
-	return frames
+	
+	frame_list = []
+	for _ in range(mi_num_clips):
+		start_idx, end_idx = get_start_end_idx(
+			frames.shape[0],
+			num_frames * sampling_rate * fps / target_fps,
+			clip_idx if decode_all_video else 0,
+			num_clips if decode_all_video else 1,
+		)
+		# Perform temporal sampling from the decoded video.
+		frame_list.append(temporal_sampling(frames, start_idx, end_idx, num_frames))
+	return frame_list
