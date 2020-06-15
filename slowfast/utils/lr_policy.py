@@ -40,7 +40,7 @@ def lr_func_cosine(cfg, cur_epoch):
     """
     return (
         cfg.SOLVER.BASE_LR
-        * (math.cos(math.pi * cur_epoch / cfg.SOLVER.MAX_EPOCH) + 1.0)
+        * (math.cos(math.pi * min(1, cur_epoch/196)) + 1.0)
         * 0.5
     )
 
