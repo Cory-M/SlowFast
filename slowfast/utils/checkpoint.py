@@ -108,7 +108,7 @@ def save_checkpoint(path_to_job, model, classifier, moco_nec, optimizer, epoch, 
 	if classifier:
 		c_sd = classifier.module.state_dict() if cfg.NUM_GPUS > 1 else classifier.state_dict()
 	if moco_nec:
-		moco_nec_sd = moco_nec.module.state_dict() if cfg.NUM_GPUS > 1 else moco_nec.state_dict()
+		moco_nec_sd = moco_nec.state_dict()
 	# Record the state.
 	checkpoint = {
 		"epoch": epoch,
@@ -191,7 +191,7 @@ def load_checkpoint(
 	# Account for the DDP wrapper in the multi-gpu setting.
 	ms = model.module if data_parallel else model
 	cs = classifier.module if data_parallel else classifier
-	moco_nec_s = moco_nec.module if data_parallel else moco_nec
+	moco_nec_s = moco_nec
 
 	if convert_from_caffe2:
 		with PathManager.open(path_to_checkpoint, "rb") as f:

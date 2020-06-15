@@ -239,7 +239,7 @@ def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logg
 
 			# Combine the errors across the GPUs.
 			top1_err, top5_err = [
-				(1.0 - x / preds.size(0)) * 100.0 for x in num_topks_correct
+				(1.0 - x / feature.size(0)) * 100.0 for x in num_topks_correct
 			]
 			if cfg.NUM_GPUS > 1:
 				loss, top1_err, top5_err = du.all_reduce(
@@ -252,7 +252,7 @@ def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logg
 			val_meter.iter_toc()
 			# Update and log stats.
 			val_meter.update_stats(
-				loss, top1_err, top5_err, inputs[0].size(0) * cfg.NUM_GPUS
+				loss, top1_err, top5_err, feature.size(0) * cfg.NUM_GPUS
 			)
 
 		if du.is_master_proc() and (cur_iter + 1) % cfg.LOG_PERIOD == 0:
