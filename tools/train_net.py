@@ -71,9 +71,8 @@ def train_epoch(train_loader, model, estimator, classifier, optimizer, train_met
 		M, Y = model(inputs)
 		M_fake = torch.cat((M[1:], M[0].unsqueeze(0)), dim=0)
 
-		#TODO
-		bs = int(Y.size(0) / 2)
-		Y = torch.cat([Y[:bs], Y[:bs]], dim=0)
+		bs = int(Y.size(0) / cfg.MI.NUM_CLIP)
+		Y = Y[:bs].repeat(cfg.MI.NUM_CLIP, 1)
 
 		loss = estimator(Y, M, M_fake)
 		preds = classifier(Y[:bs].detach())
