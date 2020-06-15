@@ -333,15 +333,19 @@ def train(cfg):
 		logger.info("Load from last checkpoint.")
 		last_checkpoint = cu.get_last_checkpoint(cfg.OUTPUT_DIR)
 		checkpoint_epoch = cu.load_checkpoint(
-			last_checkpoint, model, classifier, moco_nec,
-			cfg.NUM_GPUS > 1, optimizer
+			last_checkpoint, 
+			{'model': model,
+			'classifier': classifier, 
+			'moco_nec': moco_nec},
+			cfg.NUM_GPUS > 1, 
+			optimizer
 		)
 		start_epoch = checkpoint_epoch + 1
 	elif cfg.TRAIN.CHECKPOINT_FILE_PATH != "":
 		logger.info("Load from given checkpoint file.")
 		checkpoint_epoch = cu.load_checkpoint(
 			cfg.TRAIN.CHECKPOINT_FILE_PATH,
-			model,
+			{'model': model},
 			cfg.NUM_GPUS > 1,
 			optimizer,
 			inflation=cfg.TRAIN.CHECKPOINT_INFLATE,
@@ -381,7 +385,14 @@ def train(cfg):
 
 		# Save a checkpoint.
 		if cu.is_checkpoint_epoch(cur_epoch, cfg.TRAIN.CHECKPOINT_PERIOD):
-			cu.save_checkpoint(cfg.OUTPUT_DIR, model, classifier, moco_nec, optimizer, cur_epoch, cfg)
+			cu.save_checkpoint(
+						cfg.OUTPUT_DIR, 
+						{'model': model, 
+						'classifier': classifier, 
+						'moco_nec': moco_nec}, 
+						optimizer, 
+						cur_epoch, 
+						cfg)
 		# Evaluate the model on validation set.
 		if misc.is_eval_epoch(cfg, cur_epoch):
 			eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logger)
