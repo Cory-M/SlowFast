@@ -7,6 +7,16 @@ import torch
 import torch.nn as nn
 from detectron2.layers import ROIAlign
 
+class Normalize(nn.Module):
+
+    def __init__(self, power=2):
+        super(Normalize, self).__init__()
+        self.power = power
+
+    def forward(self, x):
+        norm = x.pow(self.power).sum(1, keepdim=True).pow(1. / self.power)
+        out = x.div(norm)
+        return out
 
 class ResNetRoIHead(nn.Module):
     """
@@ -180,7 +190,7 @@ class ResNetBasicHead(nn.Module):
         # Perform FC in a fully convolutional manner. The FC layer will be
         # initialized with a different std comparing to convolutional layers.
         self.projection = nn.Linear(sum(dim_in), num_feature, bias=True)
-
+        self.l2norm = Normalize(2)
         # Softmax for evaluation and testing.
         if act_func == "softmax":
             self.act = nn.Softmax(dim=4)
@@ -207,11 +217,6 @@ class ResNetBasicHead(nn.Module):
         if hasattr(self, "dropout"):
             x = self.dropout(x)
         x = self.projection(x)
-
-        # Performs fully convlutional inference.
-        if not self.training:
-            x = self.act(x)
-            x = x.mean([1, 2, 3])
-
         x = x.view(x.shape[0], -1)
+        x = self.l2norm(x)
         return x

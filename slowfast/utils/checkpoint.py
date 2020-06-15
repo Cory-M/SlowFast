@@ -89,7 +89,7 @@ def is_checkpoint_epoch(cur_epoch, checkpoint_period):
 	return (cur_epoch + 1) % checkpoint_period == 0
 
 
-def save_checkpoint(path_to_job, model, transformer, classifier, mask, optimizer, epoch, cfg):
+def save_checkpoint(path_to_job, model, classifier, moco_nec, optimizer, epoch, cfg):
 	"""
 	Save a checkpoint.
 	Args:
@@ -105,23 +105,20 @@ def save_checkpoint(path_to_job, model, transformer, classifier, mask, optimizer
 	PathManager.mkdirs(get_checkpoint_dir(path_to_job))
 	# Omit the DDP wrapper in the multi-gpu setting.
 	sd = model.module.state_dict() if cfg.NUM_GPUS > 1 else model.state_dict()
-	t_sd = transformer.module.state_dict() if cfg.NUM_GPUS > 1 else transformer.state_dict()
-	c_sd = classifier.module.state_dict() if cfg.NUM_GPUS > 1 else classifier.state_dict()
-	if mask:
-		mask_sd = mask.module.state_dict() if cfg.NUM_GPUS > 1 else mask.state_dict()
-	else:
-		mask_sd = None
+	if classifier:
+		c_sd = classifier.module.state_dict() if cfg.NUM_GPUS > 1 else classifier.state_dict()
+	if moco_nec:
+		moco_nec_sd = moco_nec.module.state_dict() if cfg.NUM_GPUS > 1 else moco_nec.state_dict()
 	# Record the state.
 	checkpoint = {
 		"epoch": epoch,
 		"model_state": sd,
-		"transformer": t_sd,
 		"classifier": c_sd,
+		"moco_nce": moco_nec_sd,
 		"optimizer_state": optimizer.state_dict(),
 		"cfg": cfg.dump(),
 	}
-	if mask_sd:
-		checkpoint['mask'] = mask_sd
+
 	
 	# Write the checkpoint.
 	path_to_checkpoint = get_path_to_checkpoint(path_to_job, epoch + 1)
@@ -166,9 +163,8 @@ def inflate_weight(state_dict_2d, state_dict_3d):
 def load_checkpoint(
 	path_to_checkpoint,
 	model,
-	transformer,
 	classifier,
-	mask=None,
+	moco_nec,
 	data_parallel=True,
 	optimizer=None,
 	inflation=False,
@@ -194,11 +190,9 @@ def load_checkpoint(
 	), "Checkpoint '{}' not found".format(path_to_checkpoint)
 	# Account for the DDP wrapper in the multi-gpu setting.
 	ms = model.module if data_parallel else model
-	ts = transformer.module if data_parallel else transformer
 	cs = classifier.module if data_parallel else classifier
-	if mask:
-		masks = mask.module if data_parallel else mask
-	
+	moco_nec_s = moco_nec.module if data_parallel else moco_nec
+
 	if convert_from_caffe2:
 		with PathManager.open(path_to_checkpoint, "rb") as f:
 			caffe2_checkpoint = pickle.load(f, encoding="latin1")
@@ -258,10 +252,8 @@ def load_checkpoint(
 			ms.load_state_dict(inflated_model_dict, strict=False)
 		else:
 			ms.load_state_dict(checkpoint["model_state"])
-			ts.load_state_dict(checkpoint["transformer"])
 			cs.load_state_dict(checkpoint["classifier"])
-			if mask:
-				masks.load_state_dict(checkpoint['mask'])
+			moco_nec_s.load_state_dict(checkpoint["moco_nce"])
 			# Load the optimizer state (commonly not done when fine-tuning)
 			if optimizer:
 				optimizer.load_state_dict(checkpoint["optimizer_state"])

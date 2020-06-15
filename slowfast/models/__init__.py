@@ -6,5 +6,4 @@ from .custom_video_model_builder import *  # noqa
 from .video_model_builder import ResNet, SlowFast  # noqa
 
 from .classifier import build_classifier
-from .transformer import build_transformer
-from .mask import build_mask
+from .NCEAverage import build_moco_nce

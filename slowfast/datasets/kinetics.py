@@ -7,6 +7,7 @@ import torch
 import torch.utils.data
 from fvcore.common.file_io import PathManager
 
+import numpy as np
 import slowfast.utils.logging as logging
 
 from . import decoder as decoder
@@ -192,26 +193,39 @@ class Kinetics(torch.utils.data.Dataset):
                 index = random.randint(0, len(self._path_to_videos) - 1)
                 continue
 
-            # Perform color normalization.
-            frames = utils.tensor_normalize(
-                frames, self.cfg.DATA.MEAN, self.cfg.DATA.STD
-            )
-            # T H W C -> C T H W.
-            frames = frames.permute(3, 0, 1, 2)
-            # Perform data augmentation.
-            frames = utils.spatial_sampling(
-                frames,
-                spatial_idx=spatial_sample_index,
-                min_scale=min_scale,
-                max_scale=max_scale,
-                crop_size=crop_size,
-                random_horizontal_flip=self.cfg.DATA.RANDOM_FLIP,
-                inverse_uniform_sampling=self.cfg.DATA.INV_UNIFORM_SAMPLE,
-            )
+            #Sample Two Views
+            clip_start_inds = np.random.randint(0, frames.shape[0] - self.cfg.DATA.CHUNK_FRAMES, [2])
+            num_pathways = 2 if self.cfg.MODEL.ARCH == 'slowfast' else 1
+            chundk_frames = [[] for _ in range(num_pathways)]
 
-            label = self._labels[index]
-            frames = utils.pack_pathway_output(self.cfg, frames)
-            return frames, label, index, {}
+            # Perform color normalization.
+            for ind in clip_start_inds:
+                cplit_frames = frames[ind: ind + self.cfg.DATA.CHUNK_FRAMES]
+                cplit_frames = utils.tensor_normalize(
+                    cplit_frames, self.cfg.DATA.MEAN, self.cfg.DATA.STD
+                )
+                # T H W C -> C T H W.
+                cplit_frames = cplit_frames.permute(3, 0, 1, 2)
+                # Perform data augmentation.
+                cplit_frames = utils.spatial_sampling(
+                    cplit_frames,
+                    spatial_idx=spatial_sample_index,
+                    min_scale=min_scale,
+                    max_scale=max_scale,
+                    crop_size=crop_size,
+                    random_horizontal_flip=self.cfg.DATA.RANDOM_FLIP,
+                    inverse_uniform_sampling=self.cfg.DATA.INV_UNIFORM_SAMPLE,
+                )
+
+
+
+                label = self._labels[index]
+                cplit_frames = utils.pack_pathway_output(self.cfg, cplit_frames)
+                for i in range(num_pathways):
+                    chundk_frames[i].append(cplit_frames[i])
+
+            chundk_frames = [torch.cat(pathway) for pathway in chundk_frames]
+            return chundk_frames, label, index, {}
         else:
             raise RuntimeError(
                 "Failed to fetch video after {} retries.".format(

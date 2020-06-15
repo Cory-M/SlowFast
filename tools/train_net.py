@@ -21,13 +21,14 @@ import slowfast.utils.metrics as metrics
 import slowfast.utils.misc as misc
 import slowfast.utils.functions as func
 from slowfast.datasets import loader
-from slowfast.models import build_model, build_transformer, build_classifier, build_mask
+from slowfast.models import build_model, build_classifier, build_moco_nce
 from slowfast.utils.meters import AVAMeter, TrainMeter, ValMeter
+from slowfast.utils.misc import *
 
 logger = logging.get_logger(__name__)
 
 
-def train_epoch(train_loader, model, transformer, classifier, tMask, optimizer, train_meter, cur_epoch, cfg, tb_logger):
+def train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer, train_meter, cur_epoch, cfg, tb_logger):
 	"""
 	Perform the video training for one epoch.
 	Args:
@@ -43,21 +44,32 @@ def train_epoch(train_loader, model, transformer, classifier, tMask, optimizer, 
 	# Enable train mode.
 	model.train()
 	classifier.train()
-	transformer.train()
-	if tMask:
-		tMask.train()
+	model_ema.eval()
+
+	def set_bn_train(m):
+		classname = m.__class__.__name__
+		if classname.find('BatchNorm') != -1:
+			m.train()
+
+	model_ema.apply(set_bn_train)
 
 	train_meter.iter_tic()
 	data_size = len(train_loader)
 
 	for cur_iter, (inputs, labels, _, meta) in enumerate(train_loader):
-		inputs = func.flatten(inputs, cfg)
 		# Transfer the data to the current GPU device.
+
 		if isinstance(inputs, (list,)):
+			clip_q = [None for _ in range(len(inputs))]
+			clip_k = [None for _ in range(len(inputs))]
 			for i in range(len(inputs)):
 				inputs[i] = inputs[i].cuda(non_blocking=True)
+				clip_q[i], clip_k[i] = torch.split(inputs[i], [3, 3], dim=1)
 		else:
 			inputs = inputs.cuda(non_blocking=True)
+			clip_q, clip_k = torch.split(inputs, [3, 3], dim=1)
+		del inputs
+
 		labels = labels.cuda()
 		for key, val in meta.items():
 			if isinstance(val, (list,)):
@@ -70,51 +82,30 @@ def train_epoch(train_loader, model, transformer, classifier, tMask, optimizer, 
 		lr = optim.get_epoch_lr(cur_epoch + float(cur_iter) / data_size, cfg)
 		optim.set_lr(optimizer, lr)
 
-		if cfg.DETECTION.ENABLE:
-			# Compute the predictions.
-			feature = model(inputs, meta["boxes"])
-	
-		else:
-			# Perform the forward pass.
-			feature = model(inputs)
-		feature = func.unflatten(feature, cfg)
-		masked_feature, mask = func.maskout(feature, cfg)		   
-		if cfg.MODEL.TRAINABLE_MASK:
-			masked_feature = tMask(masked_feature, mask)
-		preds = transformer(masked_feature)
-		score, target = func.compute_score(mask, feature, preds)
-	
-		inf_cls = classifier(preds[:,random.randint(0, preds.size(1)-1),:].detach())
-	
-		# Explicitly declare reduction to mean.
+
+		feat_q = model(clip_q)
+		with torch.no_grad():
+			feat_k = model_ema(clip_k)
+
+		out = moco_nec(feat_q, feat_k)
+		nce_labels = torch.zeros([out.shape[0]]).cuda().long()
 		loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
+		loss = loss_fun(out, nce_labels)
+
+		inf_cls = classifier(feat_q.detach())
+
+		# Explicitly declare reduction to mean.
 		inf_loss_fun = losses.get_loss_func('cross_entropy')(reduction="mean")
-	
+
 		# Compute the loss.
-		loss = loss_fun(score, target)
 		inf_loss = inf_loss_fun(inf_cls, labels)
 		Loss = loss + 0.1 * inf_loss
 
-		if cfg.VERBOSE and du.is_master_proc():
-			print(loss)
-			if (cur_iter + 1) % cfg.LOG_PERIOD == 0:
-				if cfg.NUM_GPUS > 1:
-					print(tMask.module.mask)
-					print(transformer.module.layers[0].self_attn.attn[0][0])
-					print(transformer.module.layers[0].self_attn.attn[1][0])
-				else:
-					print(tMask.mask)
-					print(transformer.layers[0].self_attn.attn[0][0])
-					print(transformer.layers[0].self_attn.attn[1][0])
-				print(mask)
-				print(feature[mask])
-				print(preds[mask])
-				print(score)
 
 		# check Nan Loss.
 		misc.check_nan_losses(loss)
 		misc.check_nan_losses(inf_loss)
-	
+
 		# Perform the backward pass.
 		optimizer.zero_grad()
 		Loss.backward()
@@ -122,11 +113,14 @@ def train_epoch(train_loader, model, transformer, classifier, tMask, optimizer, 
 		# Update the parameters.
 		optimizer.step()
 
+		moment_update(model, model_ema, cfg.NCE.ALPHA)
+		torch.cuda.synchronize()
+
 		if cfg.DETECTION.ENABLE:
 			if cfg.NUM_GPUS > 1:
 				loss = du.all_reduce([loss])[0]
 			loss = loss.item()
-	
+
 			train_meter.iter_toc()
 			# Update and log stats.
 			train_meter.update_stats(None, None, None, loss, lr)
@@ -140,9 +134,9 @@ def train_epoch(train_loader, model, transformer, classifier, tMask, optimizer, 
 				# Compute the errors.
 				num_topks_correct = metrics.topks_correct(inf_cls, labels, (1, 5))
 				top1_err, top5_err = [
-					(1.0 - x / preds.size(0)) * 100.0 for x in num_topks_correct
+					(1.0 - x / out.size(0)) * 100.0 for x in num_topks_correct
 				]
-	
+
 				# Gather all the predictions across all the devices.
 				if cfg.NUM_GPUS > 1:
 					loss, top1_err, top5_err = du.all_reduce(
@@ -154,10 +148,10 @@ def train_epoch(train_loader, model, transformer, classifier, tMask, optimizer, 
 					top1_err.item(),
 					top5_err.item(),
 				)
-	
+
 			# Update and log stats.
 			train_meter.update_stats(
-				top1_err, top5_err, loss, lr, inputs[0].size(0) * cfg.NUM_GPUS
+				top1_err, top5_err, loss, lr, out[0].size(0) * cfg.NUM_GPUS
 			)
 			train_meter.iter_toc()
 
@@ -177,7 +171,7 @@ def train_epoch(train_loader, model, transformer, classifier, tMask, optimizer, 
 
 
 @torch.no_grad()
-def eval_epoch(val_loader, model, transformer, classifier, val_meter, cur_epoch, cfg, tb_logger):
+def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logger):
 	"""
 	Evaluate the model on the val set.
 	Args:
@@ -191,7 +185,6 @@ def eval_epoch(val_loader, model, transformer, classifier, val_meter, cur_epoch,
 
 	# Evaluation mode enabled. The running stats would not be updated.
 	model.eval()
-	transformer.eval()
 	classifier.eval()
 	
 	val_meter.iter_tic()
@@ -199,10 +192,15 @@ def eval_epoch(val_loader, model, transformer, classifier, val_meter, cur_epoch,
 	for cur_iter, (inputs, labels, _, meta) in enumerate(val_loader):
 		# Transferthe data to the current GPU device.
 		if isinstance(inputs, (list,)):
+			clip_q = [None for _ in range(len(inputs))]
+			clip_k = [None for _ in range(len(inputs))]
 			for i in range(len(inputs)):
 				inputs[i] = inputs[i].cuda(non_blocking=True)
+				clip_q[i], clip_k[i] = torch.split(inputs[i], [3, 3], dim=1)
 		else:
 			inputs = inputs.cuda(non_blocking=True)
+			clip_q, clip_k = torch.split(inputs, [3, 3], dim=1)
+		del inputs
 		labels = labels.cuda()
 		for key, val in meta.items():
 			if isinstance(val, (list,)):
@@ -228,20 +226,15 @@ def eval_epoch(val_loader, model, transformer, classifier, val_meter, cur_epoch,
 			# Update and log stats.
 			val_meter.update_stats(preds.cpu(), ori_boxes.cpu(), metadata.cpu())
 		else:
-			feature = func.unflatten(model(func.flatten(inputs, cfg)), cfg)
-			
-			masked_feature, mask = func.maskout(feature, cfg)
-			preds = transformer(feature)
-			score, target = func.compute_score(mask, feature, preds)
-
-			inf_cls = classifier(preds[:,random.randint(0, preds.size(1)-1),:])
+			feature = model(clip_q)
+			inf_cls = classifier(feature)
 
 			# Compute the errors.
 			num_topks_correct = metrics.topks_correct(inf_cls, labels, (1, 5))
 
 			# Compute the NCE loss on validation set
 			loss_func = losses.get_loss_func('cross_entropy')(reduction="mean")
-			loss = loss_func(score, target)
+			loss = loss_func(inf_cls, labels)
 
 
 			# Combine the errors across the GPUs.
@@ -322,23 +315,25 @@ def train(cfg):
 
 	# Build the video model and print model statistics.
 	model = build_model(cfg)
-	transformer = build_transformer(cfg)
+	model_ema = build_model(cfg)
 	classifier = build_classifier(cfg)
-	tMask = build_mask(cfg) if cfg.MODEL.TRAINABLE_MASK else None
+	moco_nec = build_moco_nce(cfg)
+	moment_update(model, model_ema, 0)
+
 
 
 	if du.is_master_proc() and cfg.LOG_MODEL_INFO:
 		misc.log_model_info(model, cfg, is_train=True)
 
 	# Construct the optimizer.
-	optimizer = optim.construct_optimizer(model, cfg, transformer, classifier, tMask)
+	optimizer = optim.construct_optimizer(model, cfg, classifier)
 
 	# Load a checkpoint to resume training if applicable.
 	if cfg.TRAIN.AUTO_RESUME and cu.has_checkpoint(cfg.OUTPUT_DIR):
 		logger.info("Load from last checkpoint.")
 		last_checkpoint = cu.get_last_checkpoint(cfg.OUTPUT_DIR)
 		checkpoint_epoch = cu.load_checkpoint(
-			last_checkpoint, model, transformer, classifier, tMask, 
+			last_checkpoint, model, classifier, moco_nec,
 			cfg.NUM_GPUS > 1, optimizer
 		)
 		start_epoch = checkpoint_epoch + 1
@@ -375,18 +370,18 @@ def train(cfg):
 		# Shuffle the dataset.
 		loader.shuffle_dataset(train_loader, cur_epoch)
 		# Train for one epoch.
-		train_epoch(train_loader, model, transformer, classifier, tMask, optimizer, train_meter, cur_epoch, cfg, tb_logger)
+		train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer, train_meter, cur_epoch, cfg, tb_logger)
 
 		# Compute precise BN stats.
-#		if cfg.BN.USE_PRECISE_STATS and len(get_bn_modules(model)) > 0:
-#			calculate_and_update_precise_bn(
-#				train_loader, model, cfg, cfg.BN.NUM_BATCHES_PRECISE
-#			)
-#		_ = misc.aggregate_split_bn_stats(model)
-#
+		if cfg.BN.USE_PRECISE_STATS and len(get_bn_modules(model)) > 0:
+			calculate_and_update_precise_bn(
+				train_loader, model, cfg, cfg.BN.NUM_BATCHES_PRECISE
+			)
+		_ = misc.aggregate_split_bn_stats(model)
+
 #		# Save a checkpoint.
 		if cu.is_checkpoint_epoch(cur_epoch, cfg.TRAIN.CHECKPOINT_PERIOD):
-			cu.save_checkpoint(cfg.OUTPUT_DIR, model, transformer, classifier, tMask, optimizer, cur_epoch, cfg)
+			cu.save_checkpoint(cfg.OUTPUT_DIR, model, classifier, moco_nec, optimizer, cur_epoch, cfg)
 		# Evaluate the model on validation set.
 		if misc.is_eval_epoch(cfg, cur_epoch):
-			eval_epoch(val_loader, model, transformer, classifier, val_meter, cur_epoch, cfg, tb_logger)
+			eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logger)

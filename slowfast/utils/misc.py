@@ -18,6 +18,10 @@ from slowfast.models.batchnorm_helper import SubBatchNorm3d
 
 logger = logging.get_logger(__name__)
 
+def moment_update(model, model_ema, m):
+    """ model_ema = m * model_ema + (1 - m) model """
+    for p1, p2 in zip(model.parameters(), model_ema.parameters()):
+        p2.data.mul_(m).add_(1-m, p1.detach().data)
 
 def check_nan_losses(loss):
     """
