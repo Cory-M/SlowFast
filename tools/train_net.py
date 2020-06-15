@@ -373,12 +373,12 @@ def train(cfg):
 		train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer, train_meter, cur_epoch, cfg, tb_logger)
 
 		# Compute precise BN stats.
-#		if cfg.BN.USE_PRECISE_STATS and len(get_bn_modules(model)) > 0:
-#			calculate_and_update_precise_bn(
-#				train_loader, model, cfg, cfg.BN.NUM_BATCHES_PRECISE
-#			)
-#		_ = misc.aggregate_split_bn_stats(model)
-#
+		if cfg.BN.USE_PRECISE_STATS and len(get_bn_modules(model)) > 0:
+			calculate_and_update_precise_bn(
+				train_loader, model, cfg, cfg.BN.NUM_BATCHES_PRECISE
+			)
+		_ = misc.aggregate_split_bn_stats(model)
+
 		# Save a checkpoint.
 		if cu.is_checkpoint_epoch(cur_epoch, cfg.TRAIN.CHECKPOINT_PERIOD):
 			cu.save_checkpoint(cfg.OUTPUT_DIR, model, classifier, moco_nec, optimizer, cur_epoch, cfg)
