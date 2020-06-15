@@ -498,9 +498,6 @@ class TrainMeter(object):
 			self.num_top1_mis += top1_err * mb_size
 			self.num_top5_mis += top5_err * mb_size
 
-	def get_stats(self, cur_epoch, cur_iter):
-		return self.loss.get_win_median(), self.mb_top1_err.get_win_median(), self.mb_top5_err.get_win_median()
-
 	def log_iter_stats(self, cur_epoch, cur_iter):
 		"""
 		log the stats of the current iteration.
@@ -528,6 +525,7 @@ class TrainMeter(object):
 			stats["top1_err"] = self.mb_top1_err.get_win_median()
 			stats["top5_err"] = self.mb_top5_err.get_win_median()
 		logging.log_json_stats(stats)
+		return self.mb_top1_err.get_win_median(), self.mb_top5_err.get_win_median(), self.loss.get_win_median()
 
 	def log_epoch_stats(self, cur_epoch):
 		"""
@@ -644,9 +642,6 @@ class ValMeter(object):
 		self.all_preds.append(preds)
 		self.all_labels.append(labels)
 	
-	def get_stats(self, cur_epoch, cur_iter):
-		return self.loss.get_win_median(), self.mb_top1_err.get_win_median(), self.mb_top5_err.get_win_median()
-
 	def log_iter_stats(self, cur_epoch, cur_iter):
 		"""
 		log the stats of the current iteration.
@@ -672,8 +667,6 @@ class ValMeter(object):
 			stats["top5_err"] = self.mb_top5_err.get_win_median()
 		logging.log_json_stats(stats)
 
-	def get_epoch_stats(self, cur_epoch):
-		return self.loss_total / self.num_samples, self.num_top1_mis / self.num_samples, self.num_top5_mis / self.num_samples 
 
 	def log_epoch_stats(self, cur_epoch):
 		"""
@@ -705,6 +698,7 @@ class ValMeter(object):
 			stats["min_top5_err"] = self.min_top5_err
 			stats["avg_loss"] = self.loss_total / self.num_samples
 		logging.log_json_stats(stats)
+		return top1_err, top5_err, self.loss_total / self.num_samples
 
 
 def get_map(preds, labels):

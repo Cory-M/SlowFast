@@ -154,15 +154,16 @@ def train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer,
 				top1_err, top5_err, loss, lr, out[0].size(0) * cfg.NUM_GPUS
 			)
 			train_meter.iter_toc()
+		
+		iter_stats = train_meter.log_iter_stats(cur_epoch, cur_iter)
 
 		if du.is_master_proc() and (cur_iter + 1) % cfg.LOG_PERIOD == 0:
+			top1_err, top5_err, loss = iter_stats
 			step = cur_epoch * len(train_loader) + cur_iter
-			top1_err, top5_err, loss = train_meter.get_stats(cur_epoch, cur_iter)
 			tb_logger.add_scalar('train_loss', loss, step)
 			tb_logger.add_scalar('top1_err', top1_err, step)
 			tb_logger.add_scalar('top5_err', top5_err, step)
 
-		train_meter.log_iter_stats(cur_epoch, cur_iter)
 		train_meter.iter_tic()
 
 	# Log epoch stats.
@@ -255,18 +256,17 @@ def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logg
 				loss, top1_err, top5_err, feature.size(0) * cfg.NUM_GPUS
 			)
 
-		if du.is_master_proc() and (cur_iter + 1) % cfg.LOG_PERIOD == 0:
-			step = cur_epoch * len(val_loader) + cur_iter
-			top1_err, top5_err, loss = val_meter.get_stats(cur_epoch, cur_iter)
-			tb_logger.add_scalar('val_loss', loss, step)
-			tb_logger.add_scalar('val_top1_err', top1_err, step)
-			tb_logger.add_scalar('val_top5_err', top5_err, step)
-
 		val_meter.log_iter_stats(cur_epoch, cur_iter)
 		val_meter.iter_tic()
 
 	# Log epoch stats.
-	val_meter.log_epoch_stats(cur_epoch)
+	top1_err, top5_err, loss = val_meter.log_epoch_stats(cur_epoch)
+	if du.is_master_proc():
+		step = cur_epoch * len(val_loader) + cur_iter
+		tb_logger.add_scalar('val_loss', loss, step)
+		tb_logger.add_scalar('val_top1_err', top1_err, step)
+		tb_logger.add_scalar('val_top5_err', top5_err, step)
+
 	val_meter.reset()
 
 
@@ -373,13 +373,13 @@ def train(cfg):
 		train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer, train_meter, cur_epoch, cfg, tb_logger)
 
 		# Compute precise BN stats.
-		if cfg.BN.USE_PRECISE_STATS and len(get_bn_modules(model)) > 0:
-			calculate_and_update_precise_bn(
-				train_loader, model, cfg, cfg.BN.NUM_BATCHES_PRECISE
-			)
-		_ = misc.aggregate_split_bn_stats(model)
-
-#		# Save a checkpoint.
+#		if cfg.BN.USE_PRECISE_STATS and len(get_bn_modules(model)) > 0:
+#			calculate_and_update_precise_bn(
+#				train_loader, model, cfg, cfg.BN.NUM_BATCHES_PRECISE
+#			)
+#		_ = misc.aggregate_split_bn_stats(model)
+#
+		# Save a checkpoint.
 		if cu.is_checkpoint_epoch(cur_epoch, cfg.TRAIN.CHECKPOINT_PERIOD):
 			cu.save_checkpoint(cfg.OUTPUT_DIR, model, classifier, moco_nec, optimizer, cur_epoch, cfg)
 		# Evaluate the model on validation set.
