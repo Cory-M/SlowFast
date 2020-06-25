@@ -8,6 +8,8 @@ import os
 import numpy as np
 import pprint
 import torch
+import torch.nn.functional as F
+import torch.distributed as dist
 from fvcore.nn.precise_bn import get_bn_modules, update_bn_stats
 import random
 from torch.utils.tensorboard import SummaryWriter
@@ -24,6 +26,7 @@ from slowfast.datasets import loader
 from slowfast.models import build_model, build_classifier, build_moco_nce
 from slowfast.utils.meters import AVAMeter, TrainMeter, ValMeter
 from slowfast.utils.misc import *
+from sklearn.metrics import average_precision_score as aps
 
 logger = logging.get_logger(__name__)
 
@@ -190,6 +193,9 @@ def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logg
 	
 	val_meter.iter_tic()
 
+	gt_labels = []
+	scores = []
+	
 	for cur_iter, (inputs, labels, _, meta) in enumerate(val_loader):
 		# Transferthe data to the current GPU device.
 		if isinstance(inputs, (list,)):
@@ -202,7 +208,10 @@ def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logg
 			inputs = inputs.cuda(non_blocking=True)
 			clip_q, clip_k = torch.split(inputs, [3, 3], dim=1)
 		del inputs
+		
 		labels = labels.cuda()
+		gt_labels.append(F.one_hot(labels, 400))
+
 		for key, val in meta.items():
 			if isinstance(val, (list,)):
 				for i in range(len(val)):
@@ -230,6 +239,7 @@ def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logg
 			feature = model(clip_q)
 			inf_cls = classifier(feature)
 
+			scores.append(inf_cls)
 			# Compute the errors.
 			num_topks_correct = metrics.topks_correct(inf_cls, labels, (1, 5))
 
@@ -259,14 +269,24 @@ def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logg
 		val_meter.log_iter_stats(cur_epoch, cur_iter)
 		val_meter.iter_tic()
 
+	gt_labels = torch.cat(gt_labels, dim=0)
+	scores = torch.cat(scores, dim=0)
+
+	if cfg.NUM_GPUS > 1:
+		gt_labels, scores = du.all_gather([gt_labels, scores])
+		
 	# Log epoch stats.
 	top1_err, top5_err, loss = val_meter.log_epoch_stats(cur_epoch)
 	if du.is_master_proc():
 		step = cur_epoch * len(val_loader) + cur_iter
+		mAP = aps(gt_labels.cpu().numpy(), scores.cpu().numpy())
+		logger.info('epoch {} mAP = {}'.format(cur_epoch, mAP))
 		tb_logger.add_scalar('val_loss', loss, step)
 		tb_logger.add_scalar('val_top1_err', top1_err, step)
 		tb_logger.add_scalar('val_top5_err', top5_err, step)
+		tb_logger.add_scalar('val_mAP', mAP, step)
 
+	del gt_labels, scores
 	val_meter.reset()
 
 
@@ -393,6 +413,6 @@ def train(cfg):
 						optimizer, 
 						cur_epoch, 
 						cfg)
-		# Evaluate the model on validation set.
+	   	# Evaluate the model on validation set.
 		if misc.is_eval_epoch(cfg, cur_epoch):
 			eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logger)
