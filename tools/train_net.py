@@ -51,8 +51,10 @@ def train_epoch(train_loader, model, transformer, classifier, optimizer, train_m
 		if isinstance(inputs, (list,)):
 			for i in range(len(inputs)):
 				inputs[i] = inputs[i].cuda(non_blocking=True)
+				inputs[i] = (inputs[i] / 255.0 - cfg.DATA.MEAN) / cfg.DATA.STD
 		else:
 			inputs = inputs.cuda(non_blocking=True)
+			inputs = (inputs / 255.0 - cfg.DATA.MEAN) / cfg.DATA.STD
 		labels = labels.cuda()
 		for key, val in meta.items():
 			if isinstance(val, (list,)):
@@ -79,7 +81,6 @@ def train_epoch(train_loader, model, transformer, classifier, optimizer, train_m
 		preds = transformer(masked_feature.permute(1,0,2)).permute(1,0,2)
 		score, target = func.compute_score(mask, feature, preds)
 
-#pdb.set_trace()
 		if du.is_master_proc() and (cur_iter + 1) % (5 * cfg.LOG_PERIOD) == 0:
 			fea = masked_feature.permute(1, 0, 2)
 			tran = transformer.module if cfg.NUM_GPUS > 1 else transformer

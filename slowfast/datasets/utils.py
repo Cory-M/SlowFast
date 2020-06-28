@@ -261,11 +261,4 @@ def tensor_normalize(tensor, mean, std):
     """
     if tensor.dtype == torch.uint8:
         tensor = tensor.float()
-        tensor = tensor / 255.0
-    if type(mean) == list:
-        mean = torch.tensor(mean)
-    if type(std) == list:
-        std = torch.tensor(std)
-    tensor = tensor - mean
-    tensor = tensor / std
     return tensor
