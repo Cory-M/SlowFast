@@ -51,10 +51,10 @@ def train_epoch(train_loader, model, transformer, classifier, optimizer, train_m
 		if isinstance(inputs, (list,)):
 			for i in range(len(inputs)):
 				inputs[i] = inputs[i].cuda(non_blocking=True)
-				inputs[i] = (inputs[i] / 255.0 - cfg.DATA.MEAN) / cfg.DATA.STD
+				inputs[i] = (inputs[i] / 255.0 - cfg.DATA.MEAN[0]) / cfg.DATA.STD[0]
 		else:
 			inputs = inputs.cuda(non_blocking=True)
-			inputs = (inputs / 255.0 - cfg.DATA.MEAN) / cfg.DATA.STD
+			inputs = (inputs / 255.0 - cfg.DATA.MEAN[0]) / cfg.DATA.STD[0]
 		labels = labels.cuda()
 		for key, val in meta.items():
 			if isinstance(val, (list,)):
