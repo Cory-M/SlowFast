@@ -176,19 +176,21 @@ _C.MODEL = CfgNode()
 
 # Model architecture.
 _C.MODEL.ARCH = "slowfast"
+_C.MODEL.CLASSIFIER = "LinearProbe"
 
 # Model name
 _C.MODEL.MODEL_NAME = "SlowFast"
 
 # The number of classes to predict for the model.
 _C.MODEL.NUM_CLASSES = 400
-_C.MODEL.NUM_FEATURES = 512
+_C.MODEL.NUM_EMBEDDING = 128
+_C.MODEL.NUM_FEATURE = 2048
 
 # Loss function.
 _C.MODEL.LOSS_FUNC = "cross_entropy"
 
 # Model architectures that has one single pathway.
-_C.MODEL.SINGLE_PATHWAY_ARCH = ["c2d", "i3d", "slow"]
+_C.MODEL.SINGLE_PATHWAY_ARCH = ["c2d", "i3d", "slow", "cvrl"]
 
 # Model architectures that has multiple pathways.
 _C.MODEL.MULTI_PATHWAY_ARCH = ["slowfast"]
@@ -235,6 +237,16 @@ _C.TRANSFORMER.RATIO = 0.15
 # -----------------------------------------------------------------------------
 _C.DATA = CfgNode()
 
+_C.DATA.AUG = CfgNode()
+_C.DATA.AUG.COLOR_JITTER_PROB = 0.8
+_C.DATA.AUG.BRIGHTNESS_FACTOR = 0.8
+_C.DATA.AUG.CONTRAST_FACTOR = 0.8
+_C.DATA.AUG.SATURATION_FACTOR = 0.8
+_C.DATA.AUG.HUE_FACTOR = 0.2
+_C.DATA.AUG.GREYSCALE_PROB = 0.2
+
+_C.DATA.NORMALIZATION = True
+_C.DATA.MULTI_CLIP_NUM = 2
 # The path to the data directory.
 _C.DATA.PATH_TO_DATA_DIR = ""
 
@@ -246,9 +258,6 @@ _C.DATA.CROP_SIZE = 224
 
 # The number of frames of the input clip.
 _C.DATA.NUM_FRAMES = 8
-
-# The number of frames per chunke
-_C.DATA.CHUNK_FRAMES = 32
 
 # The video sampling rate of the input clip.
 _C.DATA.SAMPLING_RATE = 8

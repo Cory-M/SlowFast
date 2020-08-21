@@ -154,7 +154,7 @@ class MemoryMoCo(nn.Module):
 
     def __init__(self, cfg):
         super(MemoryMoCo, self).__init__()
-        self.inputSize = cfg.MODEL.NUM_FEATURES
+        self.inputSize = cfg.MODEL.NUM_EMBEDDING
         self.queueSize = cfg.NCE.K
         self.T = cfg.NCE.T
         self.index = 0

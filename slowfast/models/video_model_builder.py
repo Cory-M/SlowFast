@@ -11,6 +11,7 @@ from slowfast.models.batchnorm_helper import get_norm
 
 from . import head_helper, resnet_helper, stem_helper
 from .build import MODEL_REGISTRY
+import pdb
 
 # Number of blocks for different stages given the model depth.
 _MODEL_STAGE_DEPTH = {50: (3, 4, 6, 3), 101: (3, 4, 23, 3)}
@@ -59,6 +60,14 @@ _TEMPORAL_KERNEL_BASIS = {
 		[[3], [3]],  # res4 temporal kernel for slow and fast pathway.
 		[[3], [3]],  # res5 temporal kernel for slow and fast pathway.
 	],
+	"cvrl": [
+		[[5]],	# conv1 temporal kernel.
+		[[1]],	# res2 temporal kernel.
+		[[1]],	# res3 temporal kernel.
+		[[3]],	# res4 temporal kernel.
+		[[3]],	# res5 temporal kernel.
+	],
+
 }
 
 _POOL1 = {
@@ -68,6 +77,7 @@ _POOL1 = {
 	"i3d_nopool": [[1, 1, 1]],
 	"slow": [[1, 1, 1]],
 	"slowfast": [[1, 1, 1], [1, 1, 1]],
+	"cvrl": [[2, 1, 1]],
 }
 
 
@@ -336,13 +346,13 @@ class SlowFast(nn.Module):
 				num_feature=cfg.MODEL.NUM_FEATURES,
 				pool_size=[
 					[
-						cfg.DATA.CHUNK_FRAMES
+						cfg.DATA.NUM_FRAMES
 						// cfg.SLOWFAST.ALPHA
 						// pool_size[0][0],
 						1,
 						1,
 					],
-					[cfg.DATA.CHUNK_FRAMES // pool_size[1][0], 1, 1],
+					[cfg.DATA.NUM_FRAMES // pool_size[1][0], 1, 1],
 				],
 				resolution=[[cfg.DETECTION.ROI_XFORM_RESOLUTION] * 2] * 2,
 				scale_factor=[cfg.DETECTION.SPATIAL_SCALE_FACTOR] * 2,
@@ -359,14 +369,14 @@ class SlowFast(nn.Module):
 				num_feature=cfg.MODEL.NUM_FEATURES,
 				pool_size=[
 					[
-						cfg.DATA.CHUNK_FRAMES
+						cfg.DATA.NUM_FRAMES
 						// cfg.SLOWFAST.ALPHA
 						// pool_size[0][0],
 						cfg.DATA.CROP_SIZE // 32 // pool_size[0][1],
 						cfg.DATA.CROP_SIZE // 32 // pool_size[0][2],
 					],
 					[
-						cfg.DATA.CHUNK_FRAMES // pool_size[1][0],
+						cfg.DATA.NUM_FRAMES // pool_size[1][0],
 						cfg.DATA.CROP_SIZE // 32 // pool_size[1][1],
 						cfg.DATA.CROP_SIZE // 32 // pool_size[1][2],
 					],
@@ -449,11 +459,12 @@ class ResNet(nn.Module):
 
 		temp_kernel = _TEMPORAL_KERNEL_BASIS[cfg.MODEL.ARCH]
 
+		_stride = [[2, 2, 2]] if cfg.MODEL.ARCH == 'cvrl' else [[1, 2, 2]]
 		self.s1 = stem_helper.VideoModelStem(
 			dim_in=cfg.DATA.INPUT_CHANNEL_NUM,
 			dim_out=[width_per_group],
 			kernel=[temp_kernel[0][0] + [7, 7]],
-			stride=[[1, 2, 2]],
+			stride=_stride,
 			padding=[[temp_kernel[0][0][0] // 2, 3, 3]],
 			norm_module=self.norm_module,
 		)
@@ -478,13 +489,13 @@ class ResNet(nn.Module):
 			norm_module=self.norm_module,
 		)
 
-		for pathway in range(self.num_pathways):
-			pool = nn.MaxPool3d(
-				kernel_size=pool_size[pathway],
-				stride=pool_size[pathway],
-				padding=[0, 0, 0],
-			)
-			self.add_module("pathway{}_pool".format(pathway), pool)
+#		for pathway in range(self.num_pathways):
+#			pool = nn.MaxPool3d(
+#				kernel_size=pool_size[pathway],
+#				stride=pool_size[pathway],
+#				padding=[0, 0, 0],
+#			)
+#			self.add_module("pathway{}_pool".format(pathway), pool)
 
 		self.s3 = resnet_helper.ResStage(
 			dim_in=[width_per_group * 4],
@@ -550,7 +561,7 @@ class ResNet(nn.Module):
 			self.head = head_helper.ResNetRoIHead(
 				dim_in=[width_per_group * 32],
 				num_feature=cfg.MODEL.NUM_FEATURES,
-				pool_size=[[cfg.DATA.CHUNK_FRAMES // pool_size[0][0], 1, 1]],
+				pool_size=[[cfg.DATA.NUM_FRAMES // pool_size[0][0], 1, 1]],
 				resolution=[[cfg.DETECTION.ROI_XFORM_RESOLUTION] * 2],
 				scale_factor=[cfg.DETECTION.SPATIAL_SCALE_FACTOR],
 				dropout_rate=cfg.MODEL.DROPOUT_RATE,
@@ -560,10 +571,10 @@ class ResNet(nn.Module):
 		else:
 			self.head = head_helper.ResNetBasicHead(
 				dim_in=[width_per_group * 32],
-				num_feature=cfg.MODEL.NUM_FEATURES,
+				num_embedding=cfg.MODEL.NUM_EMBEDDING,
 				pool_size=[
 					[
-						cfg.DATA.CHUNK_FRAMES // pool_size[0][0],
+						cfg.DATA.NUM_FRAMES // pool_size[0][0],
 						cfg.DATA.CROP_SIZE // 32 // pool_size[0][1],
 						cfg.DATA.CROP_SIZE // 32 // pool_size[0][2],
 					]
@@ -573,14 +584,14 @@ class ResNet(nn.Module):
 			)
 
 	def forward(self, x, bboxes=None):
-		x = self.s1(x)
-		x = self.s2(x)
-		for pathway in range(self.num_pathways):
-			pool = getattr(self, "pathway{}_pool".format(pathway))
-			x[pathway] = pool(x[pathway])
-		x = self.s3(x)
-		x = self.s4(x)
-		x = self.s5(x)
+		x = self.s1(x) # 64, 8, 56, 56
+		x = self.s2(x) # 256, 8, 56, 56
+#		for pathway in range(self.num_pathways):
+#			pool = getattr(self, "pathway{}_pool".format(pathway))
+#			x[pathway] = pool(x[pathway])
+		x = self.s3(x) # 512, 8, 28, 28
+		x = self.s4(x) # 1024, 8, 14, 14
+		x = self.s5(x) # 2048, 8, 7, 7
 		if self.enable_detection:
 			x = self.head(x, bboxes)
 		else:

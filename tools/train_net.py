@@ -61,18 +61,23 @@ def train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer,
 
 	for cur_iter, (inputs, labels, _, meta) in enumerate(train_loader):
 		# Transfer the data to the current GPU device.
-
-		if isinstance(inputs, (list,)):
-			clip_q = [None for _ in range(len(inputs))]
-			clip_k = [None for _ in range(len(inputs))]
-			for i in range(len(inputs)):
-				inputs[i] = inputs[i].cuda(non_blocking=True)
-				clip_q[i], clip_k[i] = torch.split(inputs[i], [3, 3], dim=1)
+		clip_q, clip_k = inputs
+		if isinstance(clip_q, (list,)):
+			clip_q = [x.cuda(non_blocking=True) for x in clip_q]
+			clip_k = [x.cuda(non_blocking=True) for x in clip_k]
 		else:
-			inputs = inputs.cuda(non_blocking=True)
-			clip_q, clip_k = torch.split(inputs, [3, 3], dim=1)
+			clip_q = clip_q.cuda(non_blocking=True)
+			clip_k = clip_k.cuda(non_blocking=True)
+#		if isinstance(inputs, (list,)):
+#			clip_q = [None for _ in range(len(inputs))]
+#			clip_k = [None for _ in range(len(inputs))]
+#			for i in range(len(inputs)):
+#				inputs[i] = inputs[i].cuda(non_blocking=True)
+#				clip_q[i], clip_k[i] = torch.split(inputs[i], [3, 3], dim=1)
+#		else:
+#			inputs = inputs.cuda(non_blocking=True)
+#			clip_q, clip_k = torch.split(inputs, [3, 3], dim=1)
 		del inputs
-
 		labels = labels.cuda()
 		for key, val in meta.items():
 			if isinstance(val, (list,)):

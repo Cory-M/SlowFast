@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+__all__ = ['SimpleClassifier', 'LinearProbe']
+
 class SimpleClassifier(nn.Module):
 
 	def __init__(self, cfg, num_hidden=2000, dropout=0.2):
@@ -16,9 +18,19 @@ class SimpleClassifier(nn.Module):
 	def forward(self, x):
 		return self.net(x)
 
+class LinearProbe(nn.Module):
+	def __init__(self, cfg):
+		super(LinearProbe, self).__init__()
+		self.fc = nn.Linear(128, 400)
+		# TODO
+		# self.fc = nn.Linear(cfg.MODEL.NUM_FEATURE, cfg.MODEL.NUM_CLASSES)
+	def forward(self, x):
+		return self.fc(x)
+
 	
 def build_classifier(cfg):
-	model = SimpleClassifier(cfg)
+#	model = SimpleClassifier(cfg)
+	model = globals()[cfg.MODEL.CLASSIFIER](cfg)
 	cur_device = torch.cuda.current_device()
 	# Transfer the model to the current GPU device
 	model = model.cuda(device=cur_device)
