@@ -16,6 +16,7 @@ DATA:
   TEST_CROP_SIZE: 256
   INPUT_CHANNEL_NUM: [3]
   RANDOM_FLIP: True
+  CVRL_AUG: True
   AUG:
     COLOR_JITTER_PROB: 0.8
     BRIGHTNESS_FACTOR: 0.8
@@ -51,10 +52,13 @@ SOLVER:
   OPTIMIZING_METHOD: sgd
 MODEL:
   NUM_CLASSES: 400
+  NUM_EMBEDDING: 128
+  NUM_FEATURE: 2048
   ARCH: cvrl
   MODEL_NAME: ResNet
   LOSS_FUNC: cross_entropy
   DROPOUT_RATE: 0.
+  CLASSIFIER: LinearProbe
 TEST:
   ENABLE: True
   DATASET: kinetics
@@ -65,7 +69,7 @@ DATA_LOADER:
 NUM_GPUS: 8
 NUM_SHARDS: 1
 RNG_SEED: 0
-OUTPUT_DIR: /home/keyu/logs/cvrl
+OUTPUT_DIR: /home/keyu/logs/cvrl_no_hue
 NCE:
   K: 16384
   T: 0.1

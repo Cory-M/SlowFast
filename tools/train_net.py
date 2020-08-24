@@ -22,16 +22,22 @@ import slowfast.utils.logging as logging
 import slowfast.utils.metrics as metrics
 import slowfast.utils.misc as misc
 import slowfast.utils.functions as func
+
+import slowfast.datasets.cvrl_transform as ct
+
 from slowfast.datasets import loader
 from slowfast.models import build_model, build_classifier, build_moco_nce
 from slowfast.utils.meters import AVAMeter, TrainMeter, ValMeter
 from slowfast.utils.misc import *
 from sklearn.metrics import average_precision_score as aps
 
+from torchvision.utils import save_image, make_grid
+
+
 logger = logging.get_logger(__name__)
 
 
-def train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer, train_meter, cur_epoch, cfg, tb_logger):
+def train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer, train_meter, cur_epoch, cfg, tb_logger, gaussian_blur):
 	"""
 	Perform the video training for one epoch.
 	Args:
@@ -68,16 +74,13 @@ def train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer,
 		else:
 			clip_q = clip_q.cuda(non_blocking=True)
 			clip_k = clip_k.cuda(non_blocking=True)
-#		if isinstance(inputs, (list,)):
-#			clip_q = [None for _ in range(len(inputs))]
-#			clip_k = [None for _ in range(len(inputs))]
-#			for i in range(len(inputs)):
-#				inputs[i] = inputs[i].cuda(non_blocking=True)
-#				clip_q[i], clip_k[i] = torch.split(inputs[i], [3, 3], dim=1)
-#		else:
-#			inputs = inputs.cuda(non_blocking=True)
-#			clip_q, clip_k = torch.split(inputs, [3, 3], dim=1)
 		del inputs
+
+		if cfg.DATA.CVRL_AUG:
+			with torch.no_grad():
+				clip_q = [gaussian_blur(x) for x in clip_q]
+				clip_k = [gaussian_blur(x) for x in clip_k]
+
 		labels = labels.cuda()
 		for key, val in meta.items():
 			if isinstance(val, (list,)):
@@ -306,12 +309,12 @@ def calculate_and_update_precise_bn(loader, model, cfg, num_iters=200):
 
 	def _gen_loader():
 		for inputs, _, _, _ in loader:
-			if isinstance(inputs, (list,)):
-				for i in range(len(inputs)):
-					inputs[i] = inputs[i].cuda(non_blocking=True)
+			clip_q, _ = inputs
+			if isinstance(clip_q, (list,)):
+				clip_q = [x.cuda(non_blocking=True) for x in clip_q]
 			else:
-				inputs = inputs.cuda(non_blocking=True)
-			yield func.flatten(inputs, cfg)
+				clip_q = clip_q.cuda(non_blocking=True)
+			yield clip_q
 
 	# Update the bn stats.
 	update_bn_stats(model, _gen_loader(), num_iters)
@@ -343,6 +346,7 @@ def train(cfg):
 	model_ema = build_model(cfg)
 	classifier = build_classifier(cfg)
 	moco_nec = build_moco_nce(cfg)
+	gaussian_blur = ct.build_GaussianBlur(cfg)
 	moment_update(model, model_ema, 0)
 
 
@@ -399,7 +403,7 @@ def train(cfg):
 		# Shuffle the dataset.
 		loader.shuffle_dataset(train_loader, cur_epoch)
 		# Train for one epoch.
-		train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer, train_meter, cur_epoch, cfg, tb_logger)
+		train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer, train_meter, cur_epoch, cfg, tb_logger, gaussian_blur)
 
 		# Compute precise BN stats.
 		if cfg.BN.USE_PRECISE_STATS and len(get_bn_modules(model)) > 0:
@@ -418,6 +422,6 @@ def train(cfg):
 						optimizer, 
 						cur_epoch, 
 						cfg)
-	   	# Evaluate the model on validation set.
+		# Evaluate the model on validation set.
 		if misc.is_eval_epoch(cfg, cur_epoch):
 			eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logger)

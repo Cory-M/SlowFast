@@ -237,6 +237,7 @@ _C.TRANSFORMER.RATIO = 0.15
 # -----------------------------------------------------------------------------
 _C.DATA = CfgNode()
 
+_C.DATA.CVRL_AUG = False
 _C.DATA.AUG = CfgNode()
 _C.DATA.AUG.COLOR_JITTER_PROB = 0.8
 _C.DATA.AUG.BRIGHTNESS_FACTOR = 0.8

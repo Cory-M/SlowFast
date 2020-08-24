@@ -7,16 +7,18 @@ import torch
 import slowfast.datasets.functional as F
 import torch.nn as nn
 from torch import Tensor
+import pdb
 
 def random_short_side_scale_jitter(
 	images, min_size, max_size, boxes=None, inverse_uniform_sampling=False
 ):
+	# C, T, H, W -> C, T, H, W
 	"""
 	Perform a spatial short scale jittering on the given images and
 	corresponding boxes.
 	Args:
 		images (tensor): images to perform scale jitter. Dimension is
-			`num frames` x `channel` x `height` x `width`.
+		[C, T, H, W]	
 		min_size (int): the minimal size to scale the frames.
 		max_size (int): the maximal size to scale the frames.
 		boxes (ndarray): optional. Corresponding boxes to images.
@@ -26,7 +28,7 @@ def random_short_side_scale_jitter(
 			scale. If False, take a uniform sample from [min_scale, max_scale].
 	Returns:
 		(tensor): the scaled images with dimension of
-			`num frames` x `channel` x `new height` x `new width`.
+			[C, T, H, W]
 		(ndarray or None): the scaled boxes with dimension of
 			`num boxes` x 4.
 	"""
@@ -85,17 +87,18 @@ def crop_boxes(boxes, x_offset, y_offset):
 
 
 def random_crop(images, size, boxes=None):
+	# C, T, H, W -> C, T, H, W
 	"""
 	Perform random spatial crop on the given images and corresponding boxes.
 	Args:
 		images (tensor): images to perform random crop. The dimension is
-			`num frames` x `channel` x `height` x `width`.
+			C, T, H, W
 		size (int): the size of height and width to crop on the image.
 		boxes (ndarray or None): optional. Corresponding boxes to images.
 			Dimension is `num boxes` x 4.
 	Returns:
 		cropped (tensor): cropped images with dimension of
-			`num frames` x `channel` x `size` x `size`.
+			C, T, H, W
 		cropped_boxes (ndarray or None): the cropped boxes with dimension of
 			`num boxes` x 4.
 	"""
@@ -121,17 +124,18 @@ def random_crop(images, size, boxes=None):
 
 
 def horizontal_flip(prob, images, boxes=None):
+	# C, T, H, W -> C, T, H, W
 	"""
 	Perform horizontal flip on the given images and corresponding boxes.
 	Args:
 		prob (float): probility to flip the images.
 		images (tensor): images to perform horizontal flip, the dimension is
-			`num frames` x `channel` x `height` x `width`.
+			C, T, H, W
 		boxes (ndarray or None): optional. Corresponding boxes to images.
 			Dimension is `num boxes` x 4.
 	Returns:
 		images (tensor): images with dimension of
-			`num frames` x `channel` x `height` x `width`.
+			C, T, H, W
 		flipped_boxes (ndarray or None): the flipped boxes with dimension of
 			`num boxes` x 4.
 	"""
@@ -219,6 +223,8 @@ def clip_boxes_to_image(boxes, height, width):
 
 
 def blend(images1, images2, alpha):
+	# shape doesn't matter
+	# [C, T, H, W] or [T, C, H, W] 
 	"""
 	Blend two images with a given weight alpha.
 	Args:
@@ -236,27 +242,21 @@ def blend(images1, images2, alpha):
 
 def grayscale(images):
 	"""
-	Get the grayscale for the input images. The channels of images should be
-	in order BGR.
-	Args:
-		images (tensor): the input images for getting grayscale. Dimension is
-			`num frames` x `channel` x `height` x `width`.
-	Returns:
-		img_gray (tensor): blended images, the dimension is
-			`num frames` x `channel` x `height` x `width`.
+	C, T, H, W
+	RGB-order
 	"""
 	# R -> 0.299, G -> 0.587, B -> 0.114.
-	img_gray = torch.tensor(images)
+	img_gray = images.clone().detach()
 	gray_channel = (
-		0.299 * images[:, 2] + 0.587 * images[:, 1] + 0.114 * images[:, 0]
+		0.299 * images[0] + 0.587 * images[1] + 0.114 * images[2]
 	)
-	img_gray[:, 0] = gray_channel
-	img_gray[:, 1] = gray_channel
-	img_gray[:, 2] = gray_channel
+	img_gray[0] = gray_channel
+	img_gray[1] = gray_channel
+	img_gray[2] = gray_channel
 	return img_gray
 
 
-def color_jitter(images, img_brightness=0, img_contrast=0, img_saturation=0):
+def color_jitter(images, img_brightness=0, img_contrast=0, img_saturation=0, img_hue=0):
 	"""
 	Perfrom a color jittering on the input images. The channels of images
 	should be in order BGR.
@@ -278,16 +278,20 @@ def color_jitter(images, img_brightness=0, img_contrast=0, img_saturation=0):
 		jitter.append("contrast")
 	if img_saturation != 0:
 		jitter.append("saturation")
+	if img_hue != 0:
+		jitter.append("hue")
 
 	if len(jitter) > 0:
 		order = np.random.permutation(np.arange(len(jitter)))
 		for idx in range(0, len(jitter)):
 			if jitter[order[idx]] == "brightness":
-				images = brightness_jitter(img_brightness, images)
+				images = brightness_jitter(img_brightness, images) #support CTHW
 			elif jitter[order[idx]] == "contrast":
-				images = contrast_jitter(img_contrast, images)
+				images = contrast_jitter(img_contrast, images) # CTHW
 			elif jitter[order[idx]] == "saturation":
-				images = saturation_jitter(img_saturation, images)
+				images = saturation_jitter(img_saturation, images) # CTHW
+			elif jitter[order[idx]] == "hue": 
+				images = hue_jitter(img_hue, images) # CTHW
 	return images
 
 
@@ -324,8 +328,8 @@ def contrast_jitter(var, images):
 	"""
 	alpha = 1.0 + np.random.uniform(-var, var)
 
-	img_gray = grayscale(images)
-	img_gray[:] = torch.mean(img_gray, dim=(1, 2, 3), keepdim=True)
+	img_gray = grayscale(images) # C, T, H, W
+	img_gray[:] = torch.mean(img_gray, dim=(0, 2, 3), keepdim=True) # C, T, H, W
 	images = blend(images, img_gray, alpha)
 	return images
 
@@ -403,74 +407,28 @@ def color_normalization(images, mean, stddev):
 
 	return out_images
 
-def color_jitter(cfg, images):
-	if np.random.uniform() < cfg.COLOR_JITTER_PROB:
-		brightness_factor = np.random.uniform(max(0, 1-cfg.BRIGHTNESS_FACTOR), 1+cfg.BRIGHTNESS_FACTOR)
-		contrast_factor = np.random.uniform(1-cfg.CONTRAST_FACTOR, 1+cfg.CONTRAST_FACTOR)
-		saturation_factor = np.random.uniform(1-cfg.SATURATION_FACTOR, 1+cfg.SATURATION_FACTOR)
-		hue_factor = np.random.uniform(-cfg.HUE_FACTOR, cfg.HUE_FACTOR)
-		perm = torch.randperm(4)
-		new_images = []
-		for image in torch.unbind(images, dim=1):
-			for fn_id in perm:
-				if fn_id == 0:
-					image = F.adjust_brightness(image, brightness_factor)
-				if fn_id == 1:
-					image = F.adjust_contrast(image, contrast_factor)
-				if fn_id == 2:
-					image = F.adjust_saturation(image, saturation_factor)
-				if fn_id == 3:
-					image = _adjust_hue(image, hue_factor)
-			new_images.append(image.unsqueeze(1))
-		images = torch.cat(new_images, dim=1)
-	return images
 
-def greyscale(cfg, images):
+
+def hue_jitter(var, images):
 	# C, T, H, W
-	if np.random.uniform() < cfg.GREYSCALE_PROB:
-		images = 0.299 * images[0] + 0.587 * images[1] + 0.114 * images[2]
-		images = images.unsqueeze(0).expand(3, -1, -1, -1)
-	return images
+	if not (-0.5 <= var <= 0.5):
+		raise ValueError('hue_factor ({}) is not in [-0.5, 0.5].'.format(var))
 
-def gaussian_blur(images):
-	# C, T, H, W
-	kernel_size = images.size(2) // 10 
-	radius = kernel_size // 2
-	kernel_size = radius * 2 + 1 # to odd kernel size
+#	alpha = np.random.uniform(-var, var)
+	alpha = var
 
-	sigma = np.random.uniform(0.1, 2.0)
-	channels = 3
+	img = _rgb2hsv(images)
+	h, s, v = img.unbind(0)
+	h += alpha
+	h = h % 1.0
+	img = torch.stack((h, s, v))
+	img_hue_adj = _hsv2rgb(img)
 
-	x_coord = torch.arange(-radius, radius+1)
-	x_grid = x_coord.repeat(kernel_size).view(kernel_size, kernel_size)
-	y_grid = x_grid.t()
-	xy_grid = torch.stack([x_grid, y_grid], dim=-1).float()
-	# process the gaussian kernel along x/y-axis simutanously
-	
-	variance = sigma**2.
-
-	gaussian_kernel = (1./(2.*math.pi*variance)) *\
-					  torch.exp(-torch.sum(xy_grid**2., dim=-1) /\
-								  (2*variance))
-	gaussian_kernel = gaussian_kernel / torch.sum(gaussian_kernel)
-
-	gaussian_kernel = gaussian_kernel.view(1, 1, kernel_size, kernel_size)
-	gaussian_kernel = gaussian_kernel.repeat(channels, 1, 1, 1)
-
-	gaussian_filter = nn.Conv2d(in_channels=channels, out_channels=channels,
-				kernel_size=kernel_size, groups=channels, bias=False, padding=radius)
-	gaussian_filter.weight.data = gaussian_kernel
-	gaussian_filter.weight.requires_grad = False
-
-	images = gaussian_filter(images.permute(1, 0, 2, 3)).permute(1, 0, 2, 3)
-	return images
-
-
-
-
-
+	return img_hue_adj
 
 def _rgb2hsv(img):
+	# C, T, H, W 
+	# or C, H, W
 	r, g, b = img.unbind(0)
 
 	maxc = torch.max(img, dim=0).values
@@ -516,41 +474,18 @@ def _hsv2rgb(img):
 	q = torch.clamp((v * (1.0 - s * f)), 0.0, 1.0)
 	t = torch.clamp((v * (1.0 - s * (1.0 - f))), 0.0, 1.0)
 	i = i % 6
-
-	mask = i == torch.arange(6)[:, None, None]
+	
+	if img.ndim == 3:
+		mask = i == torch.arange(6)[:, None, None]
+	else:
+		mask = i == torch.arange(6)[:, None, None, None]
 
 	a1 = torch.stack((v, q, p, p, t, v))
 	a2 = torch.stack((t, v, v, q, p, p))
 	a3 = torch.stack((p, p, t, v, v, q))
 	a4 = torch.stack((a1, a2, a3))
+	if img.ndim == 3:
+		return torch.einsum("ijk, xijk -> xjk", mask.to(dtype=img.dtype), a4)
+	else:
+		return torch.einsum("tijk, xtijk -> xijk", mask.to(dtype=img.dtype), a4)
 
-	return torch.einsum("ijk, xijk -> xjk", mask.to(dtype=img.dtype), a4)
-
-
-
-def _adjust_hue(img, hue_factor):
-	if not (-0.5 <= hue_factor <= 0.5):
-		raise ValueError('hue_factor ({}) is not in [-0.5, 0.5].'.format(hue_factor))
-
-	if not _is_tensor_a_torch_image(img):
-		 raise TypeError('tensor is not a torch image.')
-
-	orig_dtype = img.dtype
-	if img.dtype == torch.uint8:
-		img = img.to(dtype=torch.float32) / 255.0
-	
-	img = _rgb2hsv(img)
-	h, s, v = img.unbind(0)
-	h += hue_factor
-	h = h % 1.0
-	img = torch.stack((h, s, v))
-	img_hue_adj = _hsv2rgb(img)
-
-	if orig_dtype == torch.uint8:
-		img_hue_adj = (img_hue_adj * 255.0).to(dtype=orig_dtype)
-
-	return img_hue_adj
-
-
-def _is_tensor_a_torch_image(x: Tensor) -> bool:
-	return x.ndim >= 2

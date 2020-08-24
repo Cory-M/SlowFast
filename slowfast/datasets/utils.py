@@ -11,6 +11,8 @@ from fvcore.common.file_io import PathManager
 import cv2
 
 from . import transform as transform
+from . import cvrl_transform as cvrl_transform
+
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +125,7 @@ def spatial_sampling(
 	with the given spatial_idx.
 	Args:
 		frames (tensor): frames of images sampled from the video. The
-			dimension is `num frames` x `height` x `width` x `channel`.
+			dimension is [C, T, H, W] 
 		spatial_idx (int): if -1, perform random spatial sampling. If 0, 1,
 			or 2, perform left, center, right crop if width is larger than
 			height, and perform top, center, buttom crop if height is larger
@@ -151,9 +153,9 @@ def spatial_sampling(
 		if random_horizontal_flip:
 			frames, _ = transform.horizontal_flip(0.5, frames)
 		if cvrl_aug:
-			frames = transform.color_jitter(aug_para, frames)
-			frames = transform.greyscale(aug_para, frames)
-			frames = transform.gaussian_blur(frames)
+			frames = cvrl_transform.color_jitter_and_greyscale(frames, aug_para)
+#			frames = cvrl_transform.color_jitter(aug_para, frames)
+#			frames = cvrl_transform.greyscale(aug_para, frames)
 	else:
 		# The testing is deterministic and no jitter should be performed.
 		# min_scale, max_scale, and crop_size are expect to be the same.
