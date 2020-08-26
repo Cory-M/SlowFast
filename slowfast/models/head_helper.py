@@ -156,6 +156,7 @@ class ResNetBasicHead(nn.Module):
 		pool_size,
 		dropout_rate=0.0,
 		act_func="softmax",
+		return_feature=False,
 	):
 		"""
 		The `__init__` method of any subclass should also contain these
@@ -196,6 +197,7 @@ class ResNetBasicHead(nn.Module):
 					nn.ReLU(),
 					nn.Linear(2048, num_embedding, bias=False))
 		self.l2norm = Normalize(2)
+		self.return_feature = return_feature
 		# Softmax for evaluation and testing.
 		if act_func == "softmax":
 			self.act = nn.Softmax(dim=4)
@@ -221,9 +223,11 @@ class ResNetBasicHead(nn.Module):
 		# Perform dropout.
 		if hasattr(self, "dropout"):
 			x = self.dropout(x)
-#TODO
-#		if self.return_feature:
-#			fea = x.view(x.shape([0], -1))
+		#TODO
+		if self.return_feature:
+			fea = x.view(x.shape[0], -1)
+			fea = self.l2norm(fea)
+			return fea
 		x = self.mlp(x)
 		if not self.training:
 			x = x.mean([1, 2, 3])

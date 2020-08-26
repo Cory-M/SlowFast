@@ -10,6 +10,7 @@ from slowfast.utils.parser import load_config, parse_args
 
 from test_net import test
 from train_net import train
+from eval_net import eval_prober
 
 
 def main():
@@ -38,6 +39,25 @@ def main():
             )
         else:
             train(cfg=cfg)
+	
+	# Perform Linear-prober training
+    if cfg.NUM_GPUS > 1:
+        torch.multiprocessing.spawn(
+            mpu.run,
+            nprocs=cfg.NUM_GPUS,
+            args=(
+                cfg.NUM_GPUS,
+                eval_prober,
+                args.init_method,
+                cfg.SHARD_ID,
+                cfg.NUM_SHARDS,
+                cfg.DIST_BACKEND,
+                cfg,
+            ),
+            daemon=False,
+        )
+    else:
+        eval_prober(cfg=cfg)
 
     # Perform multi-clip testing.
     if cfg.TEST.ENABLE:
