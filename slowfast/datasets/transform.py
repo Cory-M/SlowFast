@@ -237,7 +237,7 @@ def blend(images1, images2, alpha):
 		(tensor): blended images, the dimension is
 			`num frames` x `channel` x `height` x `width`.
 	"""
-	return images1 * alpha + images2 * (1 - alpha)
+	return (images1 * alpha + images2 * (1 - alpha)).clamp(0, 1)
 
 
 def grayscale(images):

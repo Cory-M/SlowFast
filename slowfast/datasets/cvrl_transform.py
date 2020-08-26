@@ -15,8 +15,7 @@ def color_jitter_and_greyscale(images, cfg):
 					img_brightness = cfg.BRIGHTNESS_FACTOR,
 					img_contrast = cfg.CONTRAST_FACTOR,
 					img_saturation = cfg.SATURATION_FACTOR,
-#					img_hue = cfg.HUE_FACTOR)
-					)
+					img_hue = cfg.HUE_FACTOR)
 	if np.random.uniform() < cfg.GREYSCALE_PROB:
 		images = grayscale_jitter(images)
 	return images
