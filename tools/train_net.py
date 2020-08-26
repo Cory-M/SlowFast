@@ -361,6 +361,7 @@ def train(cfg):
 		checkpoint_epoch = cu.load_checkpoint(
 			last_checkpoint, 
 			{'model': model,
+			'model_ema': model_ema,
 			'classifier': classifier, 
 			'moco_nec': moco_nec},
 			cfg.NUM_GPUS > 1, 
@@ -413,7 +414,8 @@ def train(cfg):
 		if cu.is_checkpoint_epoch(cur_epoch, cfg.TRAIN.CHECKPOINT_PERIOD):
 			cu.save_checkpoint(
 						cfg.OUTPUT_DIR, 
-						{'model': model, 
+						{'model': model,
+						'model_ema': model_ema,
 						'classifier': classifier, 
 						'moco_nec': moco_nec}, 
 						optimizer, 
