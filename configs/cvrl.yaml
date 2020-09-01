@@ -3,6 +3,7 @@ TRAIN:
   DATASET: kinetics
   BATCH_SIZE: 64
   EVAL_PERIOD: 10
+  EVAL_FEATURE: True
   CHECKPOINT_PERIOD: 1
   AUTO_RESUME: True
 DATA:
@@ -37,6 +38,7 @@ NONLOCAL:
   GROUP: [[1], [1], [1], [1]]
   INSTANTIATION: dot_product
 BN:
+  NORM_TYPE: all_sync_batchnorm
   USE_PRECISE_STATS: True
   NUM_BATCHES_PRECISE: 200
   MOMENTUM: 0.1
@@ -47,7 +49,7 @@ SOLVER:
   MAX_EPOCH: 196
   MOMENTUM: 0.9
   WEIGHT_DECAY: 1e-4
-  WARMUP_EPOCHS: 34.0
+  WARMUP_EPOCHS: 5.0
   WARMUP_START_LR: 0.01
   OPTIMIZING_METHOD: sgd
 MODEL:
@@ -69,7 +71,7 @@ DATA_LOADER:
 NUM_GPUS: 8
 NUM_SHARDS: 1
 RNG_SEED: 0
-OUTPUT_DIR: /home/keyu/logs/cvrl_no_hue
+OUTPUT_DIR: /home/keyu/keyu/logs/cvrl
 NCE:
   K: 16384
   T: 0.1

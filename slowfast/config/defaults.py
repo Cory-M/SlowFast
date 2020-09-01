@@ -61,6 +61,9 @@ _C.TRAIN.BATCH_SIZE = 64
 # Evaluate model on test data every eval period epochs.
 _C.TRAIN.EVAL_PERIOD = 1
 
+# Use classifier on feature. If False, use classifier on the embedding representation (usually lower dimension)
+_C.TRAIN.EVAL_FEATURE = True
+
 # Save model checkpoint every checkpoint period epochs.
 _C.TRAIN.CHECKPOINT_PERIOD = 1
 

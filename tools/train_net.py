@@ -93,17 +93,24 @@ def train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer,
 		lr = optim.get_epoch_lr(cur_epoch + float(cur_iter) / data_size, cfg)
 		optim.set_lr(optimizer, lr)
 
-
-		feat_q = model(clip_q)
+		
+		if cfg.TRAIN.EVAL_FEATURE:
+			feat_q, feature = model(clip_q)
+		else:
+			feat_q = model(clip_q)
+			feature = feat_q
+	
 		with torch.no_grad():
-			feat_k = model_ema(clip_k)
-
+			if cfg.TRAIN.EVAL_FEATURE:
+				feat_k, _ = model_ema(clip_k)
+			else:
+				feat_k = model_ema(clip_k)
 		out = moco_nec(feat_q, feat_k)
 		nce_labels = torch.zeros([out.shape[0]]).cuda().long()
 		loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
 		loss = loss_fun(out, nce_labels)
 
-		inf_cls = classifier(feat_q.detach())
+		inf_cls = classifier(feature.detach())
 
 		# Explicitly declare reduction to mean.
 		inf_loss_fun = losses.get_loss_func('cross_entropy')(reduction="mean")
@@ -162,7 +169,7 @@ def train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer,
 
 			# Update and log stats.
 			train_meter.update_stats(
-				top1_err, top5_err, loss, lr, out[0].size(0) * cfg.NUM_GPUS
+				top1_err, top5_err, loss, lr, out.size(0) * cfg.NUM_GPUS
 			)
 			train_meter.iter_toc()
 		
@@ -224,52 +231,39 @@ def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logg
 			else:
 				meta[key] = val.cuda(non_blocking=True)
 
-		if cfg.DETECTION.ENABLE:
-			# Compute the predictions.
-			preds = model(inputs, meta["boxes"])
-
-			preds = preds.cpu()
-			ori_boxes = meta["ori_boxes"].cpu()
-			metadata = meta["metadata"].cpu()
-
-			if cfg.NUM_GPUS > 1:
-				preds = torch.cat(du.all_gather_unaligned(preds), dim=0)
-				ori_boxes = torch.cat(du.all_gather_unaligned(ori_boxes), dim=0)
-				metadata = torch.cat(du.all_gather_unaligned(metadata), dim=0)
-
-			val_meter.iter_toc()
-			# Update and log stats.
-			val_meter.update_stats(preds.cpu(), ori_boxes.cpu(), metadata.cpu())
-		else:
-			feature = model(clip_q)
+		with torch.no_grad():
+			if cfg.TRAIN.EVAL_FEATURE:
+				_, feature = model(clip_q)
+			else:
+				feature = model(clip_q)
 			inf_cls = classifier(feature)
 
-			scores.append(inf_cls)
-			# Compute the errors.
-			num_topks_correct = metrics.topks_correct(inf_cls, labels, (1, 5))
+		scores.append(inf_cls)
+		# Compute the errors.
+		num_topks_correct = metrics.topks_correct(inf_cls, labels, (1, 5))
 
-			# Compute the NCE loss on validation set
-			loss_func = losses.get_loss_func('cross_entropy')(reduction="mean")
-			loss = loss_func(inf_cls, labels)
+		# Compute the NCE loss on validation set
+		loss_func = losses.get_loss_func('cross_entropy')(reduction="mean")
+		loss = loss_func(inf_cls, labels)
 
 
-			# Combine the errors across the GPUs.
-			top1_err, top5_err = [
-				(1.0 - x / feature.size(0)) * 100.0 for x in num_topks_correct
-			]
-			if cfg.NUM_GPUS > 1:
-				loss, top1_err, top5_err = du.all_reduce(
-							[loss, top1_err, top5_err])
+		# Combine the errors across the GPUs.
+		top1_err, top5_err = [
+			(1.0 - x / feature.size(0)) * 100.0 for x in num_topks_correct
+		]
+		if cfg.NUM_GPUS > 1:
+			loss, top1_err, top5_err = du.all_reduce(
+						[loss, top1_err, top5_err])
 
-			# Copy the errors from GPU to CPU (sync point).
-			loss, top1_err, top5_err = (
-						loss.item(), top1_err.item(), top5_err.item())
+		# Copy the errors from GPU to CPU (sync point).
+		loss, top1_err, top5_err = (
+					loss.item(), top1_err.item(), top5_err.item())
 
-			val_meter.iter_toc()
-			# Update and log stats.
-			val_meter.update_stats(
-				loss, top1_err, top5_err, feature.size(0) * cfg.NUM_GPUS
-			)
+		val_meter.iter_toc()
+		# Update and log stats.
+		val_meter.update_stats(
+			loss, top1_err, top5_err, feature.size(0) * cfg.NUM_GPUS
+		)
 
 		val_meter.log_iter_stats(cur_epoch, cur_iter)
 		val_meter.iter_tic()

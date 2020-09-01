@@ -414,8 +414,7 @@ def hue_jitter(var, images):
 	if not (-0.5 <= var <= 0.5):
 		raise ValueError('hue_factor ({}) is not in [-0.5, 0.5].'.format(var))
 
-#	alpha = np.random.uniform(-var, var)
-	alpha = var
+	alpha = np.random.uniform(-var, var)
 
 	img = _rgb2hsv(images)
 	h, s, v = img.unbind(0)

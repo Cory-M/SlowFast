@@ -9,19 +9,29 @@ class SimpleClassifier(nn.Module):
 
 	def __init__(self, cfg, num_hidden=2000, dropout=0.2):
 		super(SimpleClassifier, self).__init__()
+		if cfg.TRAIN.EVAL_FEATURE: 	# eval feature
+			in_channel = cfg.MODEL.NUM_FEATURE
+		else: 						# eval embedding
+			in_channel = cfg.MODEL.NUM_EMBEDDING
+		out_channel = cfg.MODEL.NUM_CLASSES
 		self.net = nn.Sequential(
-					nn.Linear(cfg.MODEL.NUM_FEATURES, num_hidden),
+					nn.Linear(in_channel, num_hidden),
 					nn.Dropout(dropout),
 					nn.BatchNorm1d(num_hidden),
 					nn.ReLU(),
-					nn.Linear(num_hidden, cfg.MODEL.NUM_CLASSES))
+					nn.Linear(num_hidden, out_channel))
 	def forward(self, x):
 		return self.net(x)
 
 class LinearProbe(nn.Module):
 	def __init__(self, cfg):
 		super(LinearProbe, self).__init__()
-		self.fc = nn.Linear(128, 400)
+		if cfg.TRAIN.EVAL_FEATURE: 	# eval feature
+			in_channel = cfg.MODEL.NUM_FEATURE
+		else: 						# eval embedding
+			in_channel = cfg.MODEL.NUM_EMBEDDING
+		out_channel = cfg.MODEL.NUM_CLASSES
+		self.fc = nn.Linear(in_channel, out_channel)
 		# TODO
 		# self.fc = nn.Linear(cfg.MODEL.NUM_FEATURE, cfg.MODEL.NUM_CLASSES)
 	def forward(self, x):

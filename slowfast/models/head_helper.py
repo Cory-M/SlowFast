@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 from detectron2.layers import ROIAlign
 
+import pdb
+
 class Normalize(nn.Module):
 
 	def __init__(self, power=2):
@@ -156,6 +158,8 @@ class ResNetBasicHead(nn.Module):
 		pool_size,
 		dropout_rate=0.0,
 		act_func="softmax",
+		return_feature=False,
+		norm_module=None,
 	):
 		"""
 		The `__init__` method of any subclass should also contain these
@@ -190,11 +194,26 @@ class ResNetBasicHead(nn.Module):
 		# Perform FC in a fully convolutional manner. The FC layer will be
 		# initialized with a different std comparing to convolutional layers.
 #		self.projection = nn.Linear(sum(dim_in), num_feature, bias=True)
-		self.mlp = nn.Sequential(
-					nn.Linear(sum(dim_in), 2048, bias=True),
-					#TODO: bn or not?
-					nn.ReLU(),
-					nn.Linear(2048, num_embedding, bias=False))
+		if norm_module:
+			self.l1 = nn.Linear(sum(dim_in), 2048, bias=True)
+			self.bn = norm_module(num_features=2048)
+			self.l2 = nn.Sequential(
+						nn.ReLU(),
+						nn.Linear(2048, num_embedding, bias=False))
+			self.do_bn = True
+#			self.mlp = nn.Sequential(
+#						nn.Linear(sum(dim_in), 2048, bias=True),
+#						norm_module(num_features=2048),
+#						nn.ReLU(),
+#						nn.Linear(2048, num_embedding, bias=False))
+		else:
+			self.mlp = nn.Sequential(
+						nn.Linear(sum(dim_in), 2048, bias=True),
+						# Not doing bn here
+						nn.ReLU(),
+						nn.Linear(2048, num_embedding, bias=False))
+			self.do_bn = False
+
 		self.l2norm = Normalize(2)
 		# Softmax for evaluation and testing.
 		if act_func == "softmax":
@@ -206,6 +225,7 @@ class ResNetBasicHead(nn.Module):
 				"{} is not supported as an activation"
 				"function.".format(act_func)
 			)
+		self.return_feature = return_feature
 
 	def forward(self, inputs):
 		assert (
@@ -221,12 +241,29 @@ class ResNetBasicHead(nn.Module):
 		# Perform dropout.
 		if hasattr(self, "dropout"):
 			x = self.dropout(x)
-#TODO
-#		if self.return_feature:
-#			fea = x.view(x.shape([0], -1))
-		x = self.mlp(x)
+		#TODO
+		if self.return_feature:
+			fea = x.view(x.size(0), -1)
+			norm = fea.pow(2).sum(1, keepdim=True).pow(1./2)
+			fea = fea.div(norm)
+		if self.do_bn:
+			x = self.l1(x)
+			x = x.permute((0, 4, 1, 2, 3)) # N, C, T, H, W
+			x = self.bn(x)
+			x = x.permute((0, 2, 3, 4, 1)) # N, T, H, W, C
+			x = self.l2(x)
+		else:
+			x = self.mlp(x)
 		if not self.training:
 			x = x.mean([1, 2, 3])
 		x = x.view(x.shape[0], -1)
 		x = self.l2norm(x)
+		if self.return_feature:
+			return x, fea
 		return x
+
+
+
+
+
+
