@@ -3,10 +3,10 @@ TRAIN:
   ENABLE: False
   DATASET: kinetics
   BATCH_SIZE: 64
-  EVAL_PERIOD: 10
-  CHECKPOINT_PERIOD: 45
+  EVAL_PERIOD: 2
+  CHECKPOINT_PERIOD: 1
   AUTO_RESUME: True
-  CHECKPOINT_FILE_PATH: /home/keyu/keyu/ckpt/cvrl_no_hue/checkpoint_epoch_00010.pyth
+  CHECKPOINT_FILE_PATH: /home/keyu/keyu/ckpt/cvrl_no_hue/checkpoint_epoch_00087.pyth
 DATA:
   NORMALIZATION: False
   TARGET_FPS: 25
@@ -40,7 +40,7 @@ NONLOCAL:
   INSTANTIATION: dot_product
 BN:
   USE_PRECISE_STATS: True
-  NUM_BATCHES_PRECISE: 200
+  NUM_BATCHES_PRECISE: 50
   MOMENTUM: 0.1
   WEIGHT_DECAY: 0.0
 SOLVER:
@@ -48,9 +48,9 @@ SOLVER:
   LR_POLICY: cosine
   MAX_EPOCH: 100
   MOMENTUM: 0.9
-  WEIGHT_DECAY: 1e-6
-  WARMUP_EPOCHS: 5.0
-  WARMUP_START_LR: 10.0
+  WEIGHT_DECAY: 0.0
+  WARMUP_EPOCHS: 0.0
+  WARMUP_START_LR: 32.0
   OPTIMIZING_METHOD: sgd
 MODEL:
   NUM_CLASSES: 400
@@ -73,7 +73,7 @@ DATA_LOADER:
 NUM_GPUS: 8
 NUM_SHARDS: 1
 RNG_SEED: 0
-OUTPUT_DIR: /home/keyu/keyu/logs/eval/cvrl_no_hue_010
+OUTPUT_DIR: /home/keyu/keyu/logs/eval/cvrl_no_hue_087_no_warmup
 NCE:
   K: 16384
   T: 0.1

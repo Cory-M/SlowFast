@@ -581,7 +581,7 @@ class ResNet(nn.Module):
 				],
 				dropout_rate=cfg.MODEL.DROPOUT_RATE,
 				act_func=cfg.MODEL.HEAD_ACT,
-				return_feature=cfg.EVAL.ENABLE,
+				return_feature=True,
 			)
 
 	def forward(self, x, bboxes=None):

@@ -79,6 +79,7 @@ def train_epoch(train_loader, model, classifier, optimizer, train_meter, cur_epo
 
 		with torch.no_grad():
 			feature = model(inputs)
+		# TODO: check dimension
 		out = classifier(feature.detach())
 	
 		loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
@@ -338,8 +339,7 @@ def eval_prober(cfg):
 			cu.save_checkpoint(
 						cfg.OUTPUT_DIR, 
 						{'model': model, 
-						'classifier': classifier, 
-						'moco_nec': moco_nec}, 
+						'classifier': classifier}, 
 						optimizer, 
 						cur_epoch, 
 						cfg)

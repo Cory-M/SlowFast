@@ -21,10 +21,7 @@ class SimpleClassifier(nn.Module):
 class LinearProbe(nn.Module):
 	def __init__(self, cfg):
 		super(LinearProbe, self).__init__()
-		if cfg.EVAL.ENABLE:
-			input_size = cfg.MODEL.NUM_FEATURE
-		else:
-			input_size = cfg.MODEL.NUM_EMBEDDING
+		input_size = cfg.MODEL.NUM_FEATURE
 		self.fc = nn.Linear(input_size, cfg.MODEL.NUM_CLASSES)
 		# TODO
 		# self.fc = nn.Linear(cfg.MODEL.NUM_FEATURE, cfg.MODEL.NUM_CLASSES)
