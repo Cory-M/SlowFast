@@ -8,7 +8,7 @@ import pdb
 import slowfast.utils.lr_policy as lr_policy
 
 
-def construct_optimizer(model, cfg, transformer=None, classifier=None, tMask=None):
+def construct_optimizer(model, cfg, classifier=None):
 	"""
 	Construct a stochastic gradient descent or ADAM optimizer with momentum.
 	Details can be found in:
@@ -40,11 +40,8 @@ def construct_optimizer(model, cfg, transformer=None, classifier=None, tMask=Non
 	optim_params = [
 		{"params": bn_params, "weight_decay": cfg.BN.WEIGHT_DECAY},
 		{"params": non_bn_parameters, "weight_decay": cfg.SOLVER.WEIGHT_DECAY},
-		{"params": transformer.parameters()},
 		{"params": classifier.parameters()}
 	]
-	if tMask:
-		optim_params.append({"params": tMask.parameters()})
 	# Check all parameters will be passed into optimizer.
 	assert len(list(model.parameters())) == len(non_bn_parameters) + len(bn_params), "parameter size does not match: {} + {} != {}".format(
 		len(non_bn_parameters), len(bn_params), len(list(model.parameters())),
@@ -90,12 +87,5 @@ def set_lr(optimizer, new_lr):
 		optimizer (optim): the optimizer using to optimize the current network.
 		new_lr (float): the new learning rate to set.
 	"""
-	for i, param_group in enumerate(optimizer.param_groups):
-		if i < 2: # slowfast backbone
-			param_group["lr"] = new_lr # * 5
-		if i == 2: # transformer
-			param_group["lr"] = new_lr
-		if i == 3: # classifier
-			param_group["lr"] = new_lr
-		if i == 4: # mask
-			param_group["lr"] = new_lr * 10 
+	for param_group in optimizer.param_groups:
+		param_group["lr"] = new_lr

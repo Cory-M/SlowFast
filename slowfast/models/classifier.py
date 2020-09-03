@@ -5,16 +5,15 @@ import torch.nn.functional as F
 
 class SimpleClassifier(nn.Module):
 
-	def __init__(self, cfg, num_hidden=2000, dropout=0.2):
+	def __init__(self, cfg):
 		super(SimpleClassifier, self).__init__()
 		self.net = nn.Sequential(
-					nn.Linear(cfg.MODEL.NUM_FEATURES, num_hidden),
-					nn.Dropout(dropout),
-					nn.BatchNorm1d(num_hidden),
-					nn.ReLU(),
-					nn.Linear(num_hidden, cfg.MODEL.NUM_CLASSES))
+					nn.Linear(cfg.MODEL.NUM_FEATURES, cfg.MODEL.NUM_CLASSES)
+		)
+		self.K = cfg.SLOWFAST.K
 	def forward(self, x):
-		return self.net(x)
+		x, _ = torch.topk(x, self.K, dim=1)
+		return self.net(x.mean(dim=1))
 
 	
 def build_classifier(cfg):

@@ -211,6 +211,8 @@ _C.MODEL.HEAD_ACT = "softmax"
 # -----------------------------------------------------------------------------
 _C.SLOWFAST = CfgNode()
 
+_C.SLOWFAST.K = 5
+
 # Corresponds to the inverse of the channel reduction ratio, $\beta$ between
 # the Slow and Fast pathways.
 _C.SLOWFAST.BETA_INV = 8
