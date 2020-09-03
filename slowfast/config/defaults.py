@@ -181,7 +181,7 @@ _C.MODEL.ARCH = "slowfast"
 _C.MODEL.MODEL_NAME = "SlowFast"
 
 # The number of classes to predict for the model.
-_C.MODEL.NUM_CLASSES = 400
+_C.MODEL.NUM_CLASSES = [125, 352]
 
 # Loss function.
 _C.MODEL.LOSS_FUNC = "cross_entropy"

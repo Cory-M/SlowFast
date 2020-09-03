@@ -87,7 +87,8 @@ class ResNetRoIHead(nn.Module):
 
         # Perform FC in a fully convolutional manner. The FC layer will be
         # initialized with a different std comparing to convolutional layers.
-        self.projection = nn.Linear(sum(dim_in), num_classes, bias=True)
+        self.projection = nn.Linear(sum(dim_in), num_classes[0], bias=True)
+        self.projection_noun = nn.Linear(sum(dim_in), num_classes[1], bias=True)
 
         # Softmax for evaluation and testing.
         if act_func == "softmax":
@@ -99,6 +100,7 @@ class ResNetRoIHead(nn.Module):
                 "{} is not supported as an activation"
                 "function.".format(act_func)
             )
+        self.act_noun = nn.Sigmoid()
 
     def forward(self, inputs, bboxes):
         assert (
@@ -179,8 +181,8 @@ class ResNetBasicHead(nn.Module):
             self.dropout = nn.Dropout(dropout_rate)
         # Perform FC in a fully convolutional manner. The FC layer will be
         # initialized with a different std comparing to convolutional layers.
-        self.projection = nn.Linear(sum(dim_in), num_classes, bias=True)
-
+        self.projection = nn.Linear(sum(dim_in), num_classes[0], bias=True)
+        self.projection_noun = nn.Linear(sum(dim_in), num_classes[1], bias=True)
         # Softmax for evaluation and testing.
         if act_func == "softmax":
             self.act = nn.Softmax(dim=4)
@@ -191,6 +193,7 @@ class ResNetBasicHead(nn.Module):
                 "{} is not supported as an activation"
                 "function.".format(act_func)
             )
+        self.act_noun = nn.Sigmoid()
 
     def forward(self, inputs):
         assert (
@@ -206,12 +209,17 @@ class ResNetBasicHead(nn.Module):
         # Perform dropout.
         if hasattr(self, "dropout"):
             x = self.dropout(x)
+
+        x_noun = self.projection_noun(x)
         x = self.projection(x)
 
         # Performs fully convlutional inference.
         if not self.training:
             x = self.act(x)
+            x_noun = self.act_noun(x_noun)
             x = x.mean([1, 2, 3])
+            x_noun = x_noun.mean([1, 2, 3])
 
         x = x.view(x.shape[0], -1)
-        return x
+        x_noun = x_noun.view(x_noun.shape[0], -1)
+        return x, x_noun

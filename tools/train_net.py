@@ -40,7 +40,7 @@ def train_epoch(train_loader, model, optimizer, train_meter, cur_epoch, cfg):
     train_meter.iter_tic()
     data_size = len(train_loader)
 
-    for cur_iter, (inputs, labels, _, meta) in enumerate(train_loader):
+    for cur_iter, (inputs, labels, label_noun, _, meta) in enumerate(train_loader):
         # Transfer the data to the current GPU device.
         if isinstance(inputs, (list,)):
             for i in range(len(inputs)):
@@ -48,6 +48,7 @@ def train_epoch(train_loader, model, optimizer, train_meter, cur_epoch, cfg):
         else:
             inputs = inputs.cuda(non_blocking=True)
         labels = labels.cuda()
+        label_noun = label_noun.cuda()
         for key, val in meta.items():
             if isinstance(val, (list,)):
                 for i in range(len(val)):
@@ -65,13 +66,14 @@ def train_epoch(train_loader, model, optimizer, train_meter, cur_epoch, cfg):
 
         else:
             # Perform the forward pass.
-            preds = model(inputs)
+            preds, preds_noun = model(inputs)
 
         # Explicitly declare reduction to mean.
         loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
-
+        loss_fun_noun = losses.get_loss_func('bce_logit')(reduction="mean")
         # Compute the loss.
-        loss = loss_fun(preds, labels)
+        loss = loss_fun(preds, labels) + loss_fun_noun(preds_noun, label_noun)
+        
 
         # check Nan Loss.
         misc.check_nan_losses(loss)
@@ -224,7 +226,7 @@ def calculate_and_update_precise_bn(loader, model, num_iters=200):
     """
 
     def _gen_loader():
-        for inputs, _, _, _ in loader:
+        for inputs, _, _, _, _ in loader:
             if isinstance(inputs, (list,)):
                 for i in range(len(inputs)):
                     inputs[i] = inputs[i].cuda(non_blocking=True)
@@ -318,5 +320,5 @@ def train(cfg):
         if cu.is_checkpoint_epoch(cur_epoch, cfg.TRAIN.CHECKPOINT_PERIOD):
             cu.save_checkpoint(cfg.OUTPUT_DIR, model, optimizer, cur_epoch, cfg)
         # Evaluate the model on validation set.
-        if misc.is_eval_epoch(cfg, cur_epoch):
-            eval_epoch(val_loader, model, val_meter, cur_epoch, cfg)
+        #if misc.is_eval_epoch(cfg, cur_epoch):
+        #    eval_epoch(val_loader, model, val_meter, cur_epoch, cfg)
