@@ -445,9 +445,16 @@ class TrainMeter(object):
 		# Current minibatch errors (smoothed over a window).
 		self.mb_top1_err = ScalarMeter(cfg.LOG_PERIOD)
 		self.mb_top5_err = ScalarMeter(cfg.LOG_PERIOD)
+		# NCE err
+		self.mb_nce_top1 = ScalarMeter(cfg.LOG_PERIOD)
+		self.mb_nce_top5 = ScalarMeter(cfg.LOG_PERIOD)
 		# Number of misclassified examples.
 		self.num_top1_mis = 0
 		self.num_top5_mis = 0
+		# Number of misclassified NCE examples
+		self.num_nce_top1 = 0
+		self.num_nce_top5 = 0
+
 		self.num_samples = 0
 
 	def reset(self):
@@ -459,8 +466,12 @@ class TrainMeter(object):
 		self.lr = None
 		self.mb_top1_err.reset()
 		self.mb_top5_err.reset()
+		self.mb_nce_top1.reset()
+		self.mb_nce_top5.reset()
 		self.num_top1_mis = 0
 		self.num_top5_mis = 0
+		self.num_nce_top1 = 0
+		self.num_nce_top5 = 0
 		self.num_samples = 0
 
 	def iter_tic(self):
@@ -475,7 +486,7 @@ class TrainMeter(object):
 		"""
 		self.iter_timer.pause()
 
-	def update_stats(self, top1_err, top5_err, loss, lr, mb_size):
+	def update_stats(self, top1_err, top5_err, nce_top1, nce_top5, loss, lr, mb_size):
 		"""
 		Update the current stats.
 		Args:
@@ -494,9 +505,13 @@ class TrainMeter(object):
 			# Current minibatch stats
 			self.mb_top1_err.add_value(top1_err)
 			self.mb_top5_err.add_value(top5_err)
+			self.mb_nce_top1.add_value(nce_top1)
+			self.mb_nce_top5.add_value(nce_top5)
 			# Aggregate stats
 			self.num_top1_mis += top1_err * mb_size
 			self.num_top5_mis += top5_err * mb_size
+			self.num_nce_top1 += nce_top1 * mb_size
+			self.num_nce_top1 += nce_top5 * mb_size
 
 	def log_iter_stats(self, cur_epoch, cur_iter):
 		"""
@@ -524,8 +539,11 @@ class TrainMeter(object):
 		if not self._cfg.DATA.MULTI_LABEL:
 			stats["top1_err"] = self.mb_top1_err.get_win_median()
 			stats["top5_err"] = self.mb_top5_err.get_win_median()
+			stats['nce_top1'] = self.mb_nce_top1.get_win_median()
+			stats['nce_top5'] = self.mb_nce_top5.get_win_median()
+
 		logging.log_json_stats(stats)
-		return self.mb_top1_err.get_win_median(), self.mb_top5_err.get_win_median(), self.loss.get_win_median()
+		return self.mb_top1_err.get_win_median(), self.mb_top5_err.get_win_median(), self.mb_nce_top1.get_win_avg(), self.mb_nce_top5.get_win_avg(), self.loss.get_win_median()
 
 	def log_epoch_stats(self, cur_epoch):
 		"""

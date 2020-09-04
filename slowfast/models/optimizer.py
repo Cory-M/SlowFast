@@ -43,7 +43,8 @@ def construct_optimizer(model, cfg, classifier=None):
 	]
 
 	if classifier:
-		optim_params.append({"params": classifier.parameters()})
+		optim_params.append({"params": classifier.parameters(), 
+					"weight_decay": cfg.SOLVER.CLS_WEIGHT_DECAY})
 
 	# Check all parameters will be passed into optimizer.
 	assert len(list(model.parameters())) == len(non_bn_parameters) + len(bn_params), "parameter size does not match: {} + {} != {}".format(
@@ -93,6 +94,6 @@ def set_lr(optimizer, new_lr):
 	for i, param_group in enumerate(optimizer.param_groups):
 		if i < 2: # slowfast backbone
 			param_group["lr"] = new_lr # * 5
-		if i == 3: # classifier
-			param_group["lr"] = new_lr
+		if i == 2 and len(param_group) == 2: # classifier
+			param_group["lr"] = new_lr * 100
 

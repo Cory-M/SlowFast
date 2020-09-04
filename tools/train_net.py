@@ -155,32 +155,42 @@ def train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer,
 					(1.0 - x / out.size(0)) * 100.0 for x in num_topks_correct
 				]
 
+				nce_topks_correct = metrics.topks_correct(out, nce_labels, (1, 5))
+				nce_top1, nce_top5 = [
+					(1.0 - x / out.size(0)) * 100.0 for x in nce_topks_correct
+				]
+
 				# Gather all the predictions across all the devices.
 				if cfg.NUM_GPUS > 1:
-					loss, top1_err, top5_err = du.all_reduce(
-						[loss, top1_err, top5_err]
+					loss, top1_err, top5_err, nce_top1, nce_top5 = du.all_reduce(
+						[loss, top1_err, top5_err, nce_top1, nce_top5]
 					)
 				# Copy the stats from GPU to CPU (sync point).
-				loss, top1_err, top5_err = (
+				loss, top1_err, top5_err, nce_top1, nce_top5 = (
 					loss.item(),
 					top1_err.item(),
 					top5_err.item(),
+					nce_top1.item(),
+					nce_top5.item()
 				)
 
 			# Update and log stats.
 			train_meter.update_stats(
-				top1_err, top5_err, loss, lr, out.size(0) * cfg.NUM_GPUS
+				top1_err, top5_err, nce_top1, nce_top5, loss, lr, out.size(0) * cfg.NUM_GPUS
 			)
 			train_meter.iter_toc()
 		
 		iter_stats = train_meter.log_iter_stats(cur_epoch, cur_iter)
 
 		if du.is_master_proc() and (cur_iter + 1) % cfg.LOG_PERIOD == 0:
-			top1_err, top5_err, loss = iter_stats
+			top1_err, top5_err, nce_top1, nce_top5, loss = iter_stats
 			step = cur_epoch * len(train_loader) + cur_iter
 			tb_logger.add_scalar('train_loss', loss, step)
 			tb_logger.add_scalar('top1_err', top1_err, step)
 			tb_logger.add_scalar('top5_err', top5_err, step)
+			tb_logger.add_scalar('nce_top1', nce_top1, step)
+			tb_logger.add_scalar('nce_top5', nce_top5, step)
+
 
 		train_meter.iter_tic()
 
