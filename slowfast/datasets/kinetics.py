@@ -211,7 +211,7 @@ class Kinetics(torch.utils.data.Dataset):
 					crop_size=crop_size,
 					random_horizontal_flip=self.cfg.DATA.RANDOM_FLIP,
 					inverse_uniform_sampling=self.cfg.DATA.INV_UNIFORM_SAMPLE,
-					cvrl_aug=True,
+					cvrl_aug=self.cfg.DATA.CVRL_AUG,
 					aug_para=self.cfg.DATA.AUG,
 				)
 				clip = utils.pack_pathway_output(self.cfg, clip)
