@@ -223,11 +223,10 @@ class ResNetBasicHead(nn.Module):
 		# Perform dropout.
 		if hasattr(self, "dropout"):
 			x = self.dropout(x)
-		#TODO
-		if self.return_feature:
-			fea = x.view(x.shape[0], -1)
-			fea = self.l2norm(fea)
-			return fea
+		if self.return_faeture:
+			norm = x.pow(2.0).sum(-1, keepdim=True).pow(1. / 2.0)
+			fea = x.div(norm)
+			return fea # (B, T, H, W, C)
 		x = self.mlp(x)
 		if not self.training:
 			x = x.mean([1, 2, 3])

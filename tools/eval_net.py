@@ -80,7 +80,7 @@ def train_epoch(train_loader, model, classifier, optimizer, train_meter, cur_epo
 		with torch.no_grad():
 			feature = model(inputs)
 		# TODO: check dimension
-		out = classifier(feature.detach())
+		out = classifier(feature.detach()).mean([1, 2, 3])
 	
 		loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
 		loss = loss_fun(out, labels)
@@ -175,7 +175,7 @@ def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logg
 				meta[key] = val.cuda(non_blocking=True)
 
 		feature = model(inputs)
-		inf_cls = classifier(feature)
+		inf_cls = classifier(feature).mean([1, 2, 3])
 
 		scores.append(inf_cls)
 		# Compute the errors.

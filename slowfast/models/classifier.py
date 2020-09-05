@@ -23,10 +23,14 @@ class LinearProbe(nn.Module):
 		super(LinearProbe, self).__init__()
 		input_size = cfg.MODEL.NUM_FEATURE
 		self.fc = nn.Linear(input_size, cfg.MODEL.NUM_CLASSES)
+		self.act = nn.Softmax(dim=4)
 		# TODO
 		# self.fc = nn.Linear(cfg.MODEL.NUM_FEATURE, cfg.MODEL.NUM_CLASSES)
 	def forward(self, x):
-		return self.fc(x)
+		x = self.fc(x)
+		if not self.training:
+			x = self.act(x)
+		return x
 
 	
 def build_classifier(cfg):
