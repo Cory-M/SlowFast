@@ -34,6 +34,7 @@ _C.BN.WEIGHT_DECAY = 0.0
 
 # Norm type, options include `batchnorm`, `sub_batchnorm`, `sync_batchnorm`
 _C.BN.NORM_TYPE = "batchnorm"
+_C.BN.SHUFFLE_BN = False
 
 # Parameter for SplitBatchNorm, where it splits the batch dimension into
 # NUM_SPLITS splits, and run BN on each of them separately independently.

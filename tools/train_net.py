@@ -101,10 +101,21 @@ def train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer,
 			feature = feat_q
 	
 		with torch.no_grad():
+			if cfg.NUM_GPUS > 1 and cfg.BN.SHUFFLE_BN:
+				gather_clip_k = du.all_gather(clip_k)
+				idx_shuffle = torch.randperm(cfg.TRAIN.BATCH_SIZE).cuda()
+				dist.broadcast(idx_shuffle, src=0)
+				idx_unshuffle = torch.argsort(idx_shuffle)
+				idx_this = idx_shuffle.view(cfg.NUM_GPUS, -1)[dist.get_rank()]
+				clip_k = [gather_clip_k[0][idx_this]]
 			if cfg.TRAIN.EVAL_FEATURE:
 				feat_k, _ = model_ema(clip_k)
 			else:
 				feat_k = model_ema(clip_k)
+			if cfg.NUM_GPUS > 1 and cfg.BN.SHUFFLE_BN:
+				gather_feat_k = du.all_gather([feat_k])
+				idx_this = idx_unshuffle.view(cfg.NUM_GPUS, -1)[dist.get_rank()]
+				feat_k = gather_feat_k[0][idx_this]
 		out = moco_nec(feat_q, feat_k)
 		nce_labels = torch.zeros([out.shape[0]]).cuda().long()
 		loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
