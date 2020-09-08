@@ -186,8 +186,10 @@ class ResNetBasicHead(nn.Module):
         # Softmax for evaluation and testing.
         if act_func == "softmax":
             self.act = nn.Softmax(dim=4)
+            self.act_noun = nn.Softmax(dim=4)
         elif act_func == "sigmoid":
             self.act = nn.Sigmoid()
+            self.act_noun = nn.Sigmoid()
         else:
             raise NotImplementedError(
                 "{} is not supported as an activation"

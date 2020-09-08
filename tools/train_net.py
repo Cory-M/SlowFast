@@ -40,7 +40,7 @@ def train_epoch(train_loader, model, optimizer, train_meter, cur_epoch, cfg):
     train_meter.iter_tic()
     data_size = len(train_loader)
 
-    for cur_iter, (inputs, labels, label_noun, _, meta) in enumerate(train_loader):
+    for cur_iter, (inputs, labels, label_noun, _, meta, _) in enumerate(train_loader):
         # Transfer the data to the current GPU device.
         if isinstance(inputs, (list,)):
             for i in range(len(inputs)):
@@ -70,7 +70,7 @@ def train_epoch(train_loader, model, optimizer, train_meter, cur_epoch, cfg):
 
         # Explicitly declare reduction to mean.
         loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
-        loss_fun_noun = losses.get_loss_func('bce_logit')(reduction="mean")
+        loss_fun_noun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
         # Compute the loss.
         loss = loss_fun(preds, labels) + loss_fun_noun(preds_noun, label_noun)
         
@@ -226,7 +226,7 @@ def calculate_and_update_precise_bn(loader, model, num_iters=200):
     """
 
     def _gen_loader():
-        for inputs, _, _, _, _ in loader:
+        for inputs, _, _, _, _, _ in loader:
             if isinstance(inputs, (list,)):
                 for i in range(len(inputs)):
                     inputs[i] = inputs[i].cuda(non_blocking=True)

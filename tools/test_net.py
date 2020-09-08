@@ -40,7 +40,7 @@ def perform_test(test_loader, model, test_meter, cfg):
     model.eval()
     test_meter.iter_tic()
 
-    for cur_iter, (inputs, labels, video_idx, meta) in enumerate(test_loader):
+    for cur_iter, (inputs, labels_verb, labels_noun, video_idx, meta, uids) in enumerate(test_loader):
         # Transfer the data to the current GPU device.
         if isinstance(inputs, (list,)):
             for i in range(len(inputs)):
@@ -49,8 +49,10 @@ def perform_test(test_loader, model, test_meter, cfg):
             inputs = inputs.cuda(non_blocking=True)
 
         # Transfer the data to the current GPU device.
-        labels = labels.cuda()
+        labels_verb = labels_verb.cuda()
+        labels_noun = labels_noun.cuda()
         video_idx = video_idx.cuda()
+        uids = uids.cuda()
         for key, val in meta.items():
             if isinstance(val, (list,)):
                 for i in range(len(val)):
@@ -81,20 +83,21 @@ def perform_test(test_loader, model, test_meter, cfg):
             test_meter.log_iter_stats(None, cur_iter)
         else:
             # Perform the forward pass.
-            preds = model(inputs)
+            preds_verb, preds_noun = model(inputs)
 
             # Gather all the predictions across all the devices to perform ensemble.
             if cfg.NUM_GPUS > 1:
-                preds, labels, video_idx = du.all_gather(
-                    [preds, labels, video_idx]
-                )
-
+                preds_verb, preds_noun, labels_verb, video_idx, uids= du.all_gather(
+                    [preds_verb, preds_noun, labels_verb, video_idx, uids]
+                    )
             test_meter.iter_toc()
             # Update and log stats.
             test_meter.update_stats(
-                preds.detach().cpu(),
-                labels.detach().cpu(),
+                preds_verb.detach().cpu(),
+                preds_noun.detach().cpu(),
+                labels_verb.detach().cpu(),
                 video_idx.detach().cpu(),
+                uids.detach().cpu(),
             )
             test_meter.log_iter_stats(cur_iter)
 
@@ -174,6 +177,7 @@ def test(cfg):
         )
         # Create meters for multi-view testing.
         test_meter = TestMeter(
+            cfg,
             len(test_loader.dataset)
             // (cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS),
             cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS,

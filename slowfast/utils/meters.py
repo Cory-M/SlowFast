@@ -224,6 +224,7 @@ class TestMeter(object):
 
     def __init__(
         self,
+        cfg,
         num_videos,
         num_clips,
         num_cls,
@@ -245,14 +246,16 @@ class TestMeter(object):
             ensemble_method (str): method to perform the ensemble, options
                 include "sum", and "max".
         """
-
+        self._cfg = cfg
         self.iter_timer = Timer()
         self.num_clips = num_clips
         self.overall_iters = overall_iters
         self.multi_label = multi_label
         self.ensemble_method = ensemble_method
         # Initialize tensors.
-        self.video_preds = torch.zeros((num_videos, num_cls))
+        self.video_preds_verb = torch.zeros((num_videos, num_cls[0]))
+        self.video_preds_noun = torch.zeros((num_videos, num_cls[1]))
+        self._uids = torch.zeros((num_videos))
         if multi_label:
             self.video_preds -= 1e10
 
@@ -270,12 +273,14 @@ class TestMeter(object):
         Reset the metric.
         """
         self.clip_count.zero_()
-        self.video_preds.zero_()
+        self.video_preds_verb.zero_()
+        self.video_preds_noun.zero_()
         if self.multi_label:
             self.video_preds -= 1e10
         self.video_labels.zero_()
+        self._uids.zero_()
 
-    def update_stats(self, preds, labels, clip_ids):
+    def update_stats(self, preds_verb, preds_noun, labels, clip_ids, uids):
         """
         Collect the predictions from the current batch and perform on-the-flight
         summation as ensemble.
@@ -288,8 +293,12 @@ class TestMeter(object):
             clip_ids (tensor): clip indexes of the current batch, dimension is
                 N.
         """
-        for ind in range(preds.shape[0]):
+        for ind in range(preds_verb.shape[0]):
             vid_id = int(clip_ids[ind]) // self.num_clips
+            if self._uids[vid_id] == 0:
+                self._uids[vid_id] = uids[ind]
+            else:
+                assert self._uids[vid_id] == uids[ind]
             if self.video_labels[vid_id].sum() > 0:
                 assert torch.equal(
                     self.video_labels[vid_id].type(torch.FloatTensor),
@@ -297,10 +306,14 @@ class TestMeter(object):
                 )
             self.video_labels[vid_id] = labels[ind]
             if self.ensemble_method == "sum":
-                self.video_preds[vid_id] += preds[ind]
+                self.video_preds_verb[vid_id] += preds_verb[ind]
+                self.video_preds_noun[vid_id] += preds_noun[ind]
             elif self.ensemble_method == "max":
-                self.video_preds[vid_id] = torch.max(
-                    self.video_preds[vid_id], preds[ind]
+                self.video_preds_verb[vid_id] = torch.max(
+                    self.video_preds_verb[vid_id], preds_verb[ind]
+                )
+                self.video_preds_noun[vid_id] = torch.max(
+                    self.video_preds_noun[vid_id], preds_noun[ind]
                 )
             else:
                 raise NotImplementedError(
@@ -350,27 +363,46 @@ class TestMeter(object):
                     self.num_clips,
                 )
             )
+        
+        json_data = {}
+        json_data['version'] = '0.1'
+        json_data['challenge'] = 'action_recognition'
+        results = {}
+        uids = self._uids.cpu().numpy()
+        preds_verb = self.video_preds_verb.cpu().numpy()
+        preds_noun  = self.video_preds_noun.cpu().numpy()
+        for i in range(uids.shape[0]):
+            key = int(uids[i])
+            row = {}
+            row['verb'] = {str(cls): float(value) for cls, value in enumerate(preds_verb[i])}
+            row['noun'] = {str(cls): float(value) for cls, value in enumerate(preds_noun[i])}
+            results[str(key)] = row
+        json_data['results'] = results
+        import json
+        file_name = 'seen.json' if self._cfg.TEST.SECTION == 's1' else 'unseen.json'
+        with open(file_name, 'w') as outfile:
+                json.dump(json_data, outfile)
 
-        stats = {"split": "test_final"}
-        if self.multi_label:
-            map = get_map(
-                self.video_preds.cpu().numpy(), self.video_labels.cpu().numpy()
-            )
-            stats["map"] = map
-        else:
-            num_topks_correct = metrics.topks_correct(
-                self.video_preds, self.video_labels, ks
-            )
-            topks = [
-                (x / self.video_preds.size(0)) * 100.0
-                for x in num_topks_correct
-            ]
-            assert len({len(ks), len(topks)}) == 1
-            for k, topk in zip(ks, topks):
-                stats["top{}_acc".format(k)] = "{:.{prec}f}".format(
-                    topk, prec=2
-                )
-        logging.log_json_stats(stats)
+        #stats = {"split": "test_final"}
+        #if self.multi_label:
+        #    map = get_map(
+        #        self.video_preds.cpu().numpy(), self.video_labels.cpu().numpy()
+        #    )
+        #    stats["map"] = map
+        #else:
+        #    num_topks_correct = metrics.topks_correct(
+        #        self.video_preds, self.video_labels, ks
+        #    )
+        #    topks = [
+        #        (x / self.video_preds.size(0)) * 100.0
+        #        for x in num_topks_correct
+        #    ]
+        #    assert len({len(ks), len(topks)}) == 1
+        #    for k, topk in zip(ks, topks):
+        #        stats["top{}_acc".format(k)] = "{:.{prec}f}".format(
+        #            topk, prec=2
+        #        )
+        #logging.log_json_stats(stats)
 
 
 class ScalarMeter(object):
