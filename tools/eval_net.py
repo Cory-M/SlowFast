@@ -57,6 +57,7 @@ def train_epoch(train_loader, model, classifier, optimizer, train_meter, cur_epo
 	train_meter.iter_tic()
 	data_size = len(train_loader)
 
+	optimizer.zero_grad()
 	for cur_iter, (inputs, labels, _, meta) in enumerate(train_loader):
 		# Transfer the data to the current GPU device.
 		inputs = inputs[0]
@@ -88,12 +89,16 @@ def train_epoch(train_loader, model, classifier, optimizer, train_meter, cur_epo
 		# check Nan Loss.
 		misc.check_nan_losses(loss)
 
-		# Perform the backward pass.
-		optimizer.zero_grad()
+		# Perform the backward pass
+#		optimizer.zero_grad()
+#		if cfg.TRAIN.PSEUDO_BATCH > 1:
+				
 		loss.backward()
 
 		# Update the parameters.
-		optimizer.step()
+		if cfg.TRAIN.PSEUDO_BATCH < 2 or (cur_iter+1) % cfg.TRAIN.PSEUDO_BATCH == 0:
+			optimizer.step()
+			optimizer.zero_grad()
 
 		# Compute the errors.
 		num_topks_correct = metrics.topks_correct(out, labels, (1, 5))

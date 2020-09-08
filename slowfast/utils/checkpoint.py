@@ -206,7 +206,7 @@ def load_checkpoint(
 		ms.load_state_dict(inflated_model_dict, strict=False)
 	else:
 		for k, ms in ms_dict.items():
-			ms.load_state_dict(checkpoint["model_state"][k])
+			ms.load_state_dict(checkpoint["model_state"][k], strict=False)
 		# Load the optimizer state (commonly not done when fine-tuning)
 		if optimizer:
 			optimizer.load_state_dict(checkpoint["optimizer_state"])
