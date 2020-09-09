@@ -85,7 +85,8 @@ def train_epoch(train_loader, model, classifier, optimizer, train_meter, cur_epo
 	
 		loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
 		loss = loss_fun(out, labels)
-
+		
+		loss = loss / cfg.TRAIN.PSEUDO_BATCH
 		# check Nan Loss.
 		misc.check_nan_losses(loss)
 
