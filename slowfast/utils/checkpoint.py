@@ -8,6 +8,7 @@ import pickle
 from collections import OrderedDict
 import torch
 from fvcore.common.file_io import PathManager
+import pdb
 
 import slowfast.utils.distributed as du
 import slowfast.utils.logging as logging
@@ -138,7 +139,12 @@ def inflate_weight(state_dict_2d, state_dict_3d):
 	"""
 	state_dict_inflated = OrderedDict()
 	for k, v2d in state_dict_2d.items():
-		assert k in state_dict_3d.keys()
+		try:
+			assert k in state_dict_3d.keys()
+		except:
+			logger.info(
+				"skip {} during inflation".format(k))
+			continue
 		v3d = state_dict_3d[k]
 		# Inflate the weight of 2D conv to 3D conv.
 		if len(v2d.shape) == 4 and len(v3d.shape) == 5:
@@ -195,15 +201,16 @@ def load_checkpoint(
 		checkpoint = torch.load(f, map_location="cpu")
 	if inflation:
 		# Try to inflate the model.
-		model_state_dict_3d = (
-			model.module.state_dict()
-			if data_parallel
-			else model.state_dict()
-		)
+#		model_state_dict_3d = (
+#			model.module.state_dict()
+#			if data_parallel
+#			else model.state_dict()
+#		)
+		model_state_dict_3d = ms_dict['model'].state_dict()
 		inflated_model_dict = inflate_weight(
 			checkpoint["model_state"], model_state_dict_3d
 		)
-		ms.load_state_dict(inflated_model_dict, strict=False)
+		ms_dict['model'].load_state_dict(inflated_model_dict, strict=False)
 	else:
 		for k, ms in ms_dict.items():
 			ms.load_state_dict(checkpoint["model_state"][k], strict=False)
