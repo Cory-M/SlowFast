@@ -102,7 +102,7 @@ class AVAMeter(object):
 				"eta": eta,
 				"time_diff": self.iter_timer.seconds(),
 				"mode": self.mode,
-				"loss": self.loss.get_win_median(),
+				"loss": self.loss.get_win_avg(),
 				"lr": self.lr,
 			}
 		elif self.mode == "val":
@@ -532,18 +532,18 @@ class TrainMeter(object):
 			"iter": "{}/{}".format(cur_iter + 1, self.epoch_iters),
 			"time_diff": self.iter_timer.seconds(),
 			"eta": eta,
-			"loss": self.loss.get_win_median(),
+			"loss": self.loss.get_win_avg(),
 			"lr": self.lr,
 			"gpu_mem": "{:.2f} GB".format(misc.gpu_mem_usage()),
 		}
 		if not self._cfg.DATA.MULTI_LABEL:
-			stats["top1_err"] = self.mb_top1_err.get_win_median()
-			stats["top5_err"] = self.mb_top5_err.get_win_median()
-			stats['nce_top1'] = self.mb_nce_top1.get_win_median()
-			stats['nce_top5'] = self.mb_nce_top5.get_win_median()
+			stats["top1_err"] = self.mb_top1_err.get_win_avg()
+			stats["top5_err"] = self.mb_top5_err.get_win_avg()
+			stats['nce_top1'] = self.mb_nce_top1.get_win_avg()
+			stats['nce_top5'] = self.mb_nce_top5.get_win_avg()
 
 		logging.log_json_stats(stats)
-		return self.mb_top1_err.get_win_median(), self.mb_top5_err.get_win_median(), self.mb_nce_top1.get_win_avg(), self.mb_nce_top5.get_win_avg(), self.loss.get_win_median()
+		return self.mb_top1_err.get_win_avg(), self.mb_top5_err.get_win_avg(), self.mb_nce_top1.get_win_avg(), self.mb_nce_top5.get_win_avg(), self.loss.get_win_avg()
 
 	def log_epoch_stats(self, cur_epoch):
 		"""
@@ -677,12 +677,12 @@ class ValMeter(object):
 			"iter": "{}/{}".format(cur_iter + 1, self.max_iter),
 			"time_diff": self.iter_timer.seconds(),
 			"eta": eta,
-			"loss": self.loss.get_win_median(),
+			"loss": self.loss.get_win_avg(),
 			"gpu_mem": "{:.2f} GB".format(misc.gpu_mem_usage()),
 		}
 		if not self._cfg.DATA.MULTI_LABEL:
-			stats["top1_err"] = self.mb_top1_err.get_win_median()
-			stats["top5_err"] = self.mb_top5_err.get_win_median()
+			stats["top1_err"] = self.mb_top1_err.get_win_avg()
+			stats["top5_err"] = self.mb_top5_err.get_win_avg()
 		logging.log_json_stats(stats)
 
 
