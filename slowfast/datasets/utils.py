@@ -154,8 +154,6 @@ def spatial_sampling(
 			frames, _ = transform.horizontal_flip(0.5, frames)
 		if cvrl_aug:
 			frames = cvrl_transform.color_jitter_and_greyscale(frames, aug_para)
-#			frames = cvrl_transform.color_jitter(aug_para, frames)
-#			frames = cvrl_transform.greyscale(aug_para, frames)
 	else:
 		# The testing is deterministic and no jitter should be performed.
 		# min_scale, max_scale, and crop_size are expect to be the same.

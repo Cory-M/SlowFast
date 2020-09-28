@@ -277,6 +277,7 @@ def decode(
 	backend="pyav",
 	max_spatial_scale=0,
 	multi_clip_num=2,
+	keep_origin=False,
 ):
 	"""
 	Decode the video and perform temporal sampling.
@@ -340,6 +341,8 @@ def decode(
 	if frames is None or frames.size(0) == 0:
 		return None
 
+	if keep_origin:
+		multi_clip_num += 1
 	multi_clip = []
 	for i in range(multi_clip_num):
 		start_idx, end_idx = get_start_end_idx(

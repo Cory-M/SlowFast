@@ -175,6 +175,7 @@ class Kinetics(torch.utils.data.Dataset):
 				continue
 
 			# Decode video. Meta info is used to perform selective decoding.
+			# if keep_origin=True, return (multi_clip_num+1) clips
 			frames = decoder.decode(
 				video_container,
 				self.cfg.DATA.SAMPLING_RATE,
@@ -186,6 +187,7 @@ class Kinetics(torch.utils.data.Dataset):
 				backend=self.cfg.DATA.DECODING_BACKEND,
 				max_spatial_scale=max_scale,
 				multi_clip_num=self.cfg.DATA.MULTI_CLIP_NUM,
+				keep_origin=(self.cfg.DATA.KEEP_ORIGIN and self.mode=='train'),
 			)
 
 			# If decoding failed (wrong format, video is too short, and etc),
@@ -196,11 +198,30 @@ class Kinetics(torch.utils.data.Dataset):
 
 			#Sample Two Views
 			clips = []
+			if self.cfg.DATA.KEEP_ORIGIN:
+				clip = frames.pop(0)
+				clip = utils.tensor_normalize(
+							clip, self.cfg.DATA.MEAN, self.cfg.DATA.STD, 
+							self.cfg.DATA.NORMALIZATION)
+				# T H W C -> C T H W
+				clip = clip.permute(3, 0, 1, 2)
+				clip = utils.spatial_sampling(
+					clip,
+					spatial_idx=1, # center crop
+					min_scale=self.cfg.DATA.TRAIN_CROP_SIZE, # 224
+					max_scale=self.cfg.DATA.TRAIN_CROP_SIZE, # 224
+					crop_size=crop_size, #224
+					random_horizontal_flip=self.cfg.DATA.RANDOM_FLIP,
+					inverse_uniform_sampling=self.cfg.DATA.INV_UNIFORM_SAMPLE,
+					cvrl_aug=False,
+				)
+				clip = utils.pack_pathway_output(self.cfg, clip)
+				clips.append(clip)
+
 			for clip in frames:
 				clip = utils.tensor_normalize(
 							clip, self.cfg.DATA.MEAN, self.cfg.DATA.STD,
 							self.cfg.DATA.NORMALIZATION)
-
 				# T H W C -> C T H W
 				clip = clip.permute(3, 0, 1, 2) #TODO
 				clip = utils.spatial_sampling(
@@ -211,7 +232,7 @@ class Kinetics(torch.utils.data.Dataset):
 					crop_size=crop_size,
 					random_horizontal_flip=self.cfg.DATA.RANDOM_FLIP,
 					inverse_uniform_sampling=self.cfg.DATA.INV_UNIFORM_SAMPLE,
-					cvrl_aug=True,
+					cvrl_aug=self.cfg.DATA.CVRL_AUG,
 					aug_para=self.cfg.DATA.AUG,
 				)
 				clip = utils.pack_pathway_output(self.cfg, clip)
