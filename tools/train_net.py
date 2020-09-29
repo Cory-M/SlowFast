@@ -67,11 +67,14 @@ def train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer,
 
 	for cur_iter, (inputs, labels, _, meta) in enumerate(train_loader):
 		# Transfer the data to the current GPU device.
-		clip_q, clip_k = inputs
+		# clip origin, clip query, clip key
+		clip_o, clip_q, clip_k = inputs
 		if isinstance(clip_q, (list,)):
+			clip_o = [x.cuda(non_blocking=True) for x in clip_o]
 			clip_q = [x.cuda(non_blocking=True) for x in clip_q]
 			clip_k = [x.cuda(non_blocking=True) for x in clip_k]
 		else:
+			clip_o = clip_o.cuda(non_blocking=True)
 			clip_q = clip_q.cuda(non_blocking=True)
 			clip_k = clip_k.cuda(non_blocking=True)
 		del inputs
@@ -116,8 +119,18 @@ def train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer,
 				gather_feat_k = du.all_gather([feat_k])
 				idx_this = idx_unshuffle.view(cfg.NUM_GPUS, -1)[dist.get_rank()]
 				feat_k = gather_feat_k[0][idx_this]
-		out = moco_nec(feat_q, feat_k)
-		nce_labels = torch.zeros([out.shape[0]]).cuda().long()
+
+		with torch.no_grad():
+			if cfg.TRAIN.EVAL_FEATURE:
+				feat_o, _ = model_ema(clip_o)
+			else:
+				feat_o = model_ema(clip_o)
+
+		out, target = moco_nec(feat_q, feat_k, feat_o)
+		# TODO
+		nce_labels = torch.cat([torch.ones(out.shape[0]).cuda().view(-1, 1).long(), target], 
+								dim=1)
+#		nce_labels = torch.zeros([out.shape[0]]).cuda().long()
 		loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
 		loss = loss_fun(out, nce_labels)
 
@@ -130,7 +143,7 @@ def train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer,
 		inf_loss = inf_loss_fun(inf_cls, labels)
 		Loss = loss + 0.1 * inf_loss
 
-
+		
 		# check Nan Loss.
 		misc.check_nan_losses(loss)
 		misc.check_nan_losses(inf_loss)
@@ -166,41 +179,48 @@ def train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer,
 					(1.0 - x / out.size(0)) * 100.0 for x in num_topks_correct
 				]
 
-				nce_topks_correct = metrics.topks_correct(out, nce_labels, (1, 5))
+#				nce_topks_correct = metrics.topks_correct(out, nce_labels, (1, 5))
+				# TODO
+				# Treat it as single-label classification here
+				nce_topks_correct = metrics.topks_correct(out, torch.zeros(out.size(0)).cuda(), (1, 5))
+
 				nce_top1, nce_top5 = [
 					(1.0 - x / out.size(0)) * 100.0 for x in nce_topks_correct
 				]
-
+				
+				pos_num = torch.sum(target).float()
 				# Gather all the predictions across all the devices.
 				if cfg.NUM_GPUS > 1:
-					loss, top1_err, top5_err, nce_top1, nce_top5 = du.all_reduce(
-						[loss, top1_err, top5_err, nce_top1, nce_top5]
+					loss, top1_err, top5_err, nce_top1, nce_top5, pos_num = du.all_reduce(
+						[loss, top1_err, top5_err, nce_top1, nce_top5, pos_num]
 					)
 				# Copy the stats from GPU to CPU (sync point).
-				loss, top1_err, top5_err, nce_top1, nce_top5 = (
+				loss, top1_err, top5_err, nce_top1, nce_top5, pos_num = (
 					loss.item(),
 					top1_err.item(),
 					top5_err.item(),
 					nce_top1.item(),
-					nce_top5.item()
+					nce_top5.item(),
+					pos_num.item(),
 				)
 
 			# Update and log stats.
 			train_meter.update_stats(
-				top1_err, top5_err, nce_top1, nce_top5, loss, lr, out.size(0) * cfg.NUM_GPUS
+				top1_err, top5_err, nce_top1, nce_top5, pos_num, loss, lr, out.size(0) * cfg.NUM_GPUS
 			)
 			train_meter.iter_toc()
 		
 		iter_stats = train_meter.log_iter_stats(cur_epoch, cur_iter)
 
 		if du.is_master_proc() and (cur_iter + 1) % cfg.LOG_PERIOD == 0:
-			top1_err, top5_err, nce_top1, nce_top5, loss = iter_stats
+			top1_err, top5_err, nce_top1, nce_top5, pos_num, loss = iter_stats
 			step = cur_epoch * len(train_loader) + cur_iter
 			tb_logger.add_scalar('train_loss', loss, step)
 			tb_logger.add_scalar('top1_err', top1_err, step)
 			tb_logger.add_scalar('top5_err', top5_err, step)
 			tb_logger.add_scalar('nce_top1', nce_top1, step)
 			tb_logger.add_scalar('nce_top5', nce_top5, step)
+			tb_logger.add_scalar('pos_num', pos_num, step)
 
 
 		train_meter.iter_tic()
@@ -387,7 +407,11 @@ def train(cfg):
 		logger.info("Load from given checkpoint file.")
 		checkpoint_epoch = cu.load_checkpoint(
 			cfg.TRAIN.CHECKPOINT_FILE_PATH,
-			{'model': model},
+			{'model': model,
+			'model_ema': model_ema,
+			'classifier': classifier,
+			'moco_nec': moco_nec,
+			},
 			cfg.NUM_GPUS > 1,
 			optimizer,
 			inflation=cfg.TRAIN.CHECKPOINT_INFLATE,

@@ -205,6 +205,12 @@ def load_checkpoint(
 		)
 		ms.load_state_dict(inflated_model_dict, strict=False)
 	else:
+		# load normal memory if relation_memory is not saved
+		if 'moco_nec' in checkpoint['model_state']:
+			if not 'relation_memory' in checkpoint['model_state']['moco_nec']:
+				checkpoint['model_state']['moco_nec']['relation_memory'] = (
+					checkpoint['model_state']['moco_nec']['memory'])
+
 		for k, ms in ms_dict.items():
 			ms.load_state_dict(checkpoint["model_state"][k])
 		# Load the optimizer state (commonly not done when fine-tuning)
