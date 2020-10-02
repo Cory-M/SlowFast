@@ -17,12 +17,13 @@ class MemoryMoCo(nn.Module):
 		stdv = 1. / math.sqrt(self.inputSize / 3)
 		self.register_buffer('memory', torch.rand(self.queueSize, self.inputSize).mul_(2 * stdv).add_(-stdv))
 		self.register_buffer('relation_memory', torch.rand(self.queueSize, self.inputSize).mul_(2 * stdv).add_(-stdv))
+		self.register_buffer('ground_truth', torch.zeros(self.queueSize).long())
 
 		self.thresh = cfg.NCE.THRESH
 		self.topk = cfg.NCE.TOPK
 		self.selection = cfg.NCE.SELECTION
 
-	def forward(self, q, k, o):
+	def forward(self, q, k, o, labels):
 		batchSize = q.shape[0]
 		k = k.detach()
 		o = o.detach()
@@ -34,20 +35,35 @@ class MemoryMoCo(nn.Module):
 		queue = self.memory.clone()
 		l_neg = torch.mm(queue.detach(), q.transpose(1, 0))
 		l_neg = l_neg.transpose(0, 1)
-		# correlation mining
+
+#		Correlation Mining
+		"""
+			Available Input: 
+			  relation_queue ([queue_size, feature_size])
+			  o (current original image query)
+			Output:
+			  target ([batch_size, queue_size], multi-hot labels (0/1),
+					type: Float )
+		"""
 		relation_queue = self.relation_memory.clone()
 		similarity = torch.mm(relation_queue.detach(), o.transpose(1, 0))
 		similarity = similarity.transpose(0, 1) # [bs, queue_size]
 
 		if self.selection == 'thresh':
-			# Multi-hot (Float)
-			target = similarity.ge(self.thresh).float()  # [bs, queue_size], 0/1 long
+			target = similarity.ge(self.thresh).float()  # [bs, queue_size]
 		elif self.selection == 'topk':
 			target = torch.topk(similarity, dim=1, k=self.topk)[1]
-			# convert to multi-hot (Float)
-			target = torch.zeros_like(similarity).scatter_(dim=1, index=target, value=1)
+			target = torch.zeros_like(similarity).scatter_(
+						dim=1, index=target, value=1) # convert to multi-hot
 		else:
+			# TODO
 			raise NotImplementedError('selection method {} is not supported'.format(self.selection))
+
+		# Computing mininig acc
+		q_label_idx, k_label_idx = torch.nonzero(target, as_tuple=True)
+		q_label = labels[q_label_idx]
+		k_label = self.ground_truth[k_label_idx]
+		mining_acc = torch.sum(q_label == k_label) * 100.0 / q_label.size(0)
 
 		out = torch.cat((l_pos, l_neg), dim=1) # [bs, 1 + queue_size]
 
@@ -63,10 +79,10 @@ class MemoryMoCo(nn.Module):
 			# index_copy_: (dim, index, tensor)
 			self.memory.index_copy_(0, out_ids, k)
 			self.relation_memory.index_copy_(0, out_ids, o)
-
+			self.ground_truth.index_copy_(0, out_ids, labels)
 			self.index = (self.index + batchSize) % self.queueSize
-
-		return out, target
+		
+		return out, target, mining_acc
 
 
 def build_moco_nce(cfg):

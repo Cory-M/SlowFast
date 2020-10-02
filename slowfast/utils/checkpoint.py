@@ -12,6 +12,7 @@ from fvcore.common.file_io import PathManager
 import slowfast.utils.distributed as du
 import slowfast.utils.logging as logging
 from slowfast.utils.c2_model_loading import get_name_convert_func
+import pdb
 
 logger = logging.get_logger(__name__)
 
@@ -206,11 +207,15 @@ def load_checkpoint(
 		ms.load_state_dict(inflated_model_dict, strict=False)
 	else:
 		# load normal memory if relation_memory is not saved
+		# initialize ground truth with -1 if not saved
 		if 'moco_nec' in checkpoint['model_state']:
 			if not 'relation_memory' in checkpoint['model_state']['moco_nec']:
 				checkpoint['model_state']['moco_nec']['relation_memory'] = (
 					checkpoint['model_state']['moco_nec']['memory'])
-
+			if not 'grount_truth' in checkpoint['model_state']['moco_nec']:
+				qs = checkpoint['model_state']['moco_nec']['memory'].size(0)
+				checkpoint['model_state']['moco_nec']['ground_truth'] = (
+					torch.zeros(qs).fill_(-1).long())
 		for k, ms in ms_dict.items():
 			ms.load_state_dict(checkpoint["model_state"][k])
 		# Load the optimizer state (commonly not done when fine-tuning)
