@@ -128,8 +128,9 @@ def train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer,
 
 		out, target = moco_nec(feat_q, feat_k, feat_o)
 		# TODO
-		nce_labels = torch.cat([torch.ones(out.shape[0]).cuda().view(-1, 1).long(), target], 
-								dim=1)
+		nce_labels = torch.cat(
+					[torch.ones(out.shape[0]).cuda().view(-1, 1), target], dim=1)
+		# type: TensorFloat
 #		nce_labels = torch.zeros([out.shape[0]]).cuda().long()
 		loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
 		loss = loss_fun(out, nce_labels)

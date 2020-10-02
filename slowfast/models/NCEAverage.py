@@ -12,12 +12,15 @@ class MemoryMoCo(nn.Module):
 		self.inputSize = cfg.MODEL.NUM_EMBEDDING
 		self.queueSize = cfg.NCE.K
 		self.T = cfg.NCE.T
-		self.index = 0
-		self.thresh = cfg.NCE.THRESH
 
+		self.index = 0
 		stdv = 1. / math.sqrt(self.inputSize / 3)
 		self.register_buffer('memory', torch.rand(self.queueSize, self.inputSize).mul_(2 * stdv).add_(-stdv))
 		self.register_buffer('relation_memory', torch.rand(self.queueSize, self.inputSize).mul_(2 * stdv).add_(-stdv))
+
+		self.thresh = cfg.NCE.THRESH
+		self.topk = cfg.NCE.TOPK
+		self.selection = cfg.NCE.SELECTION
 
 	def forward(self, q, k, o):
 		batchSize = q.shape[0]
@@ -35,7 +38,16 @@ class MemoryMoCo(nn.Module):
 		relation_queue = self.relation_memory.clone()
 		similarity = torch.mm(relation_queue.detach(), o.transpose(1, 0))
 		similarity = similarity.transpose(0, 1) # [bs, queue_size]
-		target = similarity.ge(self.thresh).long()  # [bs, queue_size], 0/1 long
+
+		if self.selection == 'thresh':
+			# Multi-hot (Float)
+			target = similarity.ge(self.thresh).float()  # [bs, queue_size], 0/1 long
+		elif self.selection == 'topk':
+			target = torch.topk(similarity, dim=1, k=self.topk)[1]
+			# convert to multi-hot (Float)
+			target = torch.zeros_like(similarity).scatter_(dim=1, index=target, value=1)
+		else:
+			raise NotImplementedError('selection method {} is not supported'.format(self.selection))
 
 		out = torch.cat((l_pos, l_neg), dim=1) # [bs, 1 + queue_size]
 
