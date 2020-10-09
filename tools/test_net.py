@@ -13,7 +13,7 @@ import slowfast.utils.misc as misc
 from slowfast.datasets import loader
 from slowfast.models import build_model
 from slowfast.utils.meters import AVAMeter, TestMeter
-
+from tqdm import tqdm
 logger = logging.get_logger(__name__)
 
 
@@ -40,15 +40,15 @@ def perform_test(test_loader, model, test_meter, cfg):
     model.eval()
     test_meter.iter_tic()
 
-    for cur_iter, (inputs, labels, video_idx, meta) in enumerate(test_loader):
+    for cur_iter, (inputs, labels, video_idx, meta, stidxs, uids) in tqdm(enumerate(test_loader), total=len(test_loader)):
         # Transfer the data to the current GPU device.
+        inputs = inputs[0] 
         if isinstance(inputs, (list,)):
             for i in range(len(inputs)):
                 inputs[i] = inputs[i].cuda(non_blocking=True)
         else:
             inputs = inputs.cuda(non_blocking=True)
-
-        # Transfer the data to the current GPU device.
+       # Transfer the data to the current GPU device.
         labels = labels.cuda()
         video_idx = video_idx.cuda()
         for key, val in meta.items():
@@ -61,7 +61,6 @@ def perform_test(test_loader, model, test_meter, cfg):
         if cfg.DETECTION.ENABLE:
             # Compute the predictions.
             preds = model(inputs, meta["boxes"])
-
             preds = preds.cpu()
             ori_boxes = meta["ori_boxes"].cpu()
             metadata = meta["metadata"].cpu()
@@ -81,8 +80,11 @@ def perform_test(test_loader, model, test_meter, cfg):
             test_meter.log_iter_stats(None, cur_iter)
         else:
             # Perform the forward pass.
-            preds = model(inputs)
-
+            _, feats = model(inputs)
+            feature = feats.cpu().numpy()
+            for i in range(feature.shape[0]):
+                np.save('/home/layer6/chundi/epic_forward_feats/{}_{}_{}.sbn196.npy'.format(cfg.TEST.SECTION, uids[i], stidxs[i]), feature[i])
+            continue
             # Gather all the predictions across all the devices to perform ensemble.
             if cfg.NUM_GPUS > 1:
                 preds, labels, video_idx = du.all_gather(
@@ -134,7 +136,7 @@ def test(cfg):
     if cfg.TEST.CHECKPOINT_FILE_PATH != "":
         cu.load_checkpoint(
             cfg.TEST.CHECKPOINT_FILE_PATH,
-            model,
+            {'model': model},
             cfg.NUM_GPUS > 1,
             None,
             inflation=False,

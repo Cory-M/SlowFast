@@ -80,9 +80,16 @@ class Epic(torch.utils.data.Dataset):
         """
         Construct the video loader.
         """
-        path_to_file = os.path.join(
-            self.cfg.DATA.PATH_TO_DATA_DIR, "EPIC_train_action_labels.csv"
-        )
+        
+        if self.mode == 'test':
+            if self.cfg.TEST.SECTION == 'train':
+                path_to_file = os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, "EPIC_{}_action_labels.csv".format(self.cfg.TEST.SECTION))
+            else:
+                path_to_file = os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, "EPIC_test_{}_timestamps_full.csv".format(self.cfg.TEST.SECTION))
+        else:
+            path_to_file = os.path.join(
+                path_to_file = os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, "EPIC_{}_action_labels.csv".format(self.mode))
+            )
         assert PathManager.exists(path_to_file), "{} dir not found".format(
             path_to_file
         )
@@ -92,18 +99,23 @@ class Epic(torch.utils.data.Dataset):
         self._verb_labels = []
         self._noun_labels = []
         self._spatial_temporal_idx = []
+        self._uids = []
         df = pd.read_csv(path_to_file)
         for i in range(df.shape[0]):
             row = df.iloc[i]
             for idx in range(self._num_clips):
-                self._path_to_folder.append(os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, self.mode, row['participant_id'], row['video_id']))
+                self._uids.append(row['uid'])
+                if self.mode == 'test' and self.cfg.TEST.SECTION == 'train':
+                    self._path_to_folder.append(os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, self.cfg.TEST.SECTION, row['participant_id'], row['video_id']))
+                else:
+                    self._path_to_folder.append(os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, self.mode, row['participant_id'], row['video_id']))
                 self._frame_range.append([row['start_frame'], row['stop_frame']])
-                self._verb_labels.append(row['verb_class'])
-                noun_classes = [int(c) for c in row['all_noun_classes'][1:-1].split(',')]
-                _noun_labels = [0] * self.noun_num_classes
-                for nc in noun_classes:
-                    _noun_labels[nc] = 1
-                self._noun_labels.append(_noun_labels)
+                if self.mode == 'test':
+                    self._verb_labels.append(-1)
+                    self._noun_labels.append(-1)
+                else:
+                    self._verb_labels.append(row['verb_class'])
+                    self._noun_labels.append(row['noun_class'])
                 self._spatial_temporal_idx.append(idx)
                 self._video_meta[i * self._num_clips + idx] = {}
         assert (
@@ -163,12 +175,17 @@ class Epic(torch.utils.data.Dataset):
         
         # Decode video. Meta info is used to perform selective decoding.
         candidates = []
-        for i in range(2):
+        num_clips = 1 if self.mode == 'test' else 2
+
+        for i in range(num_clips):
             if self._frame_range[index][0] >= self._frame_range[index][1] + 1 - self.cfg.DATA.NUM_FRAMES * self.cfg.DATA.SAMPLING_RATE:
                 start_frame_id = self._frame_range[index][0]
                 stop_frame_id = self._frame_range[index][1]
             else:
-                start_frame_id = np.random.randint(self._frame_range[index][0], self._frame_range[index][1] + 1 - self.cfg.DATA.NUM_FRAMES * self.cfg.DATA.SAMPLING_RATE)
+                if self.mode == 'test':
+                    start_frame_id = self._frame_range[index][0] + temporal_sample_index * ((self._frame_range[index][1] + 1 - self.cfg.DATA.NUM_FRAMES * self.cfg.DATA.SAMPLING_RATE - self._frame_range[index][0]) // self.cfg.TEST.NUM_ENSEMBLE_VIEWS)
+                else:
+                    start_frame_id = np.random.randint(self._frame_range[index][0], self._frame_range[index][1] + 1 - self.cfg.DATA.NUM_FRAMES * self.cfg.DATA.SAMPLING_RATE)
                 stop_frame_id = start_frame_id + self.cfg.DATA.NUM_FRAMES * self.cfg.DATA.SAMPLING_RATE
             
             indices = torch.arange(start_frame_id, stop_frame_id, self.cfg.DATA.SAMPLING_RATE).numpy().astype(int)
@@ -206,7 +223,9 @@ class Epic(torch.utils.data.Dataset):
             clips.append(clip)
 
         label = self._verb_labels[index]
-        return clips, label, index, {}
+        stid = self._spatial_temporal_idx[index]
+        uid = self._uids[index]
+        return clips, label, index, {}, stid, uid
 
     def __len__(self):
         """

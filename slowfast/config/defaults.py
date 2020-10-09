@@ -108,6 +108,7 @@ _C.TEST.NUM_SPATIAL_CROPS = 3
 # Checkpoint types include `caffe2` or `pytorch`.
 _C.TEST.CHECKPOINT_TYPE = "pytorch"
 
+_C.TEST.SECTION = 's1'
 
 # -----------------------------------------------------------------------------
 # ResNet options
