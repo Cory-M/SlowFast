@@ -14,4 +14,6 @@ def add_custom_config(_C):
 	_C.NCE.THRESH = 0.99
 	_C.NCE.TOPK = 5
 	_C.NCE.SELECTION = 'thresh'
+	_C.NCE.QE = False
+	_C.NCE.QE_NUM = 10
 	pass

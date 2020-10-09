@@ -126,7 +126,7 @@ def train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer,
 			else:
 				feat_o = model_ema(clip_o)
 
-		out, target, mining_acc = moco_nec(feat_q, feat_k, feat_o, labels)
+		out, target, mining_num = moco_nec(feat_q, feat_k, feat_o, labels)
 		# TODO
 		nce_labels = torch.cat(
 					[torch.ones(out.shape[0]).cuda().view(-1, 1), target], dim=1)
@@ -192,23 +192,23 @@ def train_epoch(train_loader, model, classifier, model_ema, moco_nec, optimizer,
 				pos_num = torch.sum(target).float()
 				# Gather all the predictions across all the devices.
 				if cfg.NUM_GPUS > 1:
-					loss, top1_err, top5_err, nce_top1, nce_top5, pos_num, mining_acc = du.all_reduce(
-						[loss, top1_err, top5_err, nce_top1, nce_top5, pos_num, mining_acc]
+					loss, top1_err, top5_err, nce_top1, nce_top5, pos_num, mining_num = du.all_reduce(
+						[loss, top1_err, top5_err, nce_top1, nce_top5, pos_num, mining_num]
 					)
 				# Copy the stats from GPU to CPU (sync point).
-				loss, top1_err, top5_err, nce_top1, nce_top5, pos_num, mining_acc = (
+				loss, top1_err, top5_err, nce_top1, nce_top5, pos_num, mining_num = (
 					loss.item(),
 					top1_err.item(),
 					top5_err.item(),
 					nce_top1.item(),
 					nce_top5.item(),
 					pos_num.item(),
-					mining_acc.item(),
+					mining_num.item(),
 				)
 
 			# Update and log stats.
 			train_meter.update_stats(
-				top1_err, top5_err, nce_top1, nce_top5, pos_num, mining_acc, loss, lr, out.size(0) * cfg.NUM_GPUS
+				top1_err, top5_err, nce_top1, nce_top5, pos_num, mining_num, loss, lr, out.size(0) * cfg.NUM_GPUS
 			)
 			train_meter.iter_toc()
 		

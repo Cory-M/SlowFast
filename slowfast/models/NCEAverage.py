@@ -22,6 +22,9 @@ class MemoryMoCo(nn.Module):
 		self.thresh = cfg.NCE.THRESH
 		self.topk = cfg.NCE.TOPK
 		self.selection = cfg.NCE.SELECTION
+		self.do_QE = cfg.NCE.QE
+		if self.do_QE:
+			self.qe_num = cfg.NCE.QE_NUM
 
 	def forward(self, q, k, o, labels):
 		batchSize = q.shape[0]
@@ -49,6 +52,16 @@ class MemoryMoCo(nn.Module):
 		similarity = torch.mm(relation_queue.detach(), o.transpose(1, 0))
 		similarity = similarity.transpose(0, 1) # [bs, queue_size]
 
+		if self.do_QE:
+			topk_idx = torch.topk(similarity, dim=1, k=self.qe_num)[1] #[bs, qe_num]
+			topk_feats = relation_queue[topk_idx.view(-1)].detach() #[bs*qe_num, f_size]
+			topk_feats = topk_feats.view(-1, self.qe_num, self.inputSize) #[bs, qe_num, f_size]
+			concat_feats = torch.cat([o.view(-1, 1, self.inputSize), topk_feats], dim=1) #[bs, qe_num+1, f_size] 
+			weights = torch.arange(self.qe_num+1, 0, -1).repeat(o.size(0)).view(-1, self.qe_num+1, 1).cuda() # [bs, qe_num+1, f_size]
+			val_feats = torch.mean(weights * concat_feats, axis=1) # [bs, f_size]
+			val_feats = val_feats / torch.norm(val_feats, dim=1, keepdim=True)
+			similarity = torch.mm(relation_queue.detach(), val_feats.transpose(1, 0)).transpose(0, 1) # [bs, queue_size]
+
 		if self.selection == 'thresh':
 			target = similarity.ge(self.thresh).float()  # [bs, queue_size]
 		elif self.selection == 'topk':
@@ -56,14 +69,13 @@ class MemoryMoCo(nn.Module):
 			target = torch.zeros_like(similarity).scatter_(
 						dim=1, index=target, value=1) # convert to multi-hot
 		else:
-			# TODO
 			raise NotImplementedError('selection method {} is not supported'.format(self.selection))
 
 		# Computing mininig acc
 		q_label_idx, k_label_idx = torch.nonzero(target, as_tuple=True)
 		q_label = labels[q_label_idx]
 		k_label = self.ground_truth[k_label_idx]
-		mining_acc = torch.sum(q_label == k_label) * 100.0 / q_label.size(0)
+		mining_num = torch.sum(q_label == k_label).float()
 
 		out = torch.cat((l_pos, l_neg), dim=1) # [bs, 1 + queue_size]
 
@@ -82,7 +94,7 @@ class MemoryMoCo(nn.Module):
 			self.ground_truth.index_copy_(0, out_ids, labels)
 			self.index = (self.index + batchSize) % self.queueSize
 		
-		return out, target, mining_acc
+		return out, target, mining_num
 
 
 def build_moco_nce(cfg):

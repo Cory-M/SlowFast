@@ -212,7 +212,7 @@ def load_checkpoint(
 			if not 'relation_memory' in checkpoint['model_state']['moco_nec']:
 				checkpoint['model_state']['moco_nec']['relation_memory'] = (
 					checkpoint['model_state']['moco_nec']['memory'])
-			if not 'grount_truth' in checkpoint['model_state']['moco_nec']:
+			if not 'ground_truth' in checkpoint['model_state']['moco_nec']:
 				qs = checkpoint['model_state']['moco_nec']['memory'].size(0)
 				checkpoint['model_state']['moco_nec']['ground_truth'] = (
 					torch.zeros(qs).fill_(-1).long())
