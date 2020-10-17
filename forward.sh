@@ -6,5 +6,5 @@ python tools/run_net.py \
 		   DATA.RANDOM_FLIP False \
 		   DATA.CVRL_AUG False \
 		   TEST.SECTION train \
-		   TEST.CHECKPOINT_FILE_PATH /home/layer6/chundi/logs/cvrl_shuffleBN_epic/checkpoints/checkpoint_epoch_00196.pyth \
-		   DATA.PATH_TO_DATA_DIR /home/layer6/chundi/epic/rgb/
+		   TEST.CHECKPOINT_FILE_PATH /home/keyu/layer6/chundi/logs/cvrl_shuffleBN_epic/checkpoints/checkpoint_epoch_00196.pyth \
+		   DATA.PATH_TO_DATA_DIR /home/keyu/layer6/chundi/epic/rgb/
