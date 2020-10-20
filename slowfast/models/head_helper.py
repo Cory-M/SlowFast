@@ -157,6 +157,7 @@ class ResNetBasicHead(nn.Module):
 		dropout_rate=0.0,
 		act_func="softmax",
 		return_feature=False,
+		feature_l2=True
 	):
 		"""
 		The `__init__` method of any subclass should also contain these
@@ -191,13 +192,8 @@ class ResNetBasicHead(nn.Module):
 		# Perform FC in a fully convolutional manner. The FC layer will be
 		# initialized with a different std comparing to convolutional layers.
 #		self.projection = nn.Linear(sum(dim_in), num_feature, bias=True)
-		self.mlp = nn.Sequential(
-					nn.Linear(sum(dim_in), 2048, bias=True),
-					#TODO: bn or not?
-					nn.ReLU(),
-					nn.Linear(2048, num_embedding, bias=False))
-		self.l2norm = Normalize(2)
 		self.return_feature = return_feature
+		self.feature_l2 = feature_l2
 		# Softmax for evaluation and testing.
 		if act_func == "softmax":
 			self.act = nn.Softmax(dim=4)
@@ -224,12 +220,9 @@ class ResNetBasicHead(nn.Module):
 		if hasattr(self, "dropout"):
 			x = self.dropout(x)
 		if self.return_feature:
-			norm = x.pow(2.0).sum(-1, keepdim=True).pow(1. / 2.0)
-			fea = x.div(norm)
-			return fea # (B, T, H, W, C)
-		x = self.mlp(x)
-		if not self.training:
-			x = x.mean([1, 2, 3])
-		x = x.view(x.shape[0], -1)
-		x = self.l2norm(x)
-		return x
+			if self.feature_l2:
+				norm = x.pow(2.0).sum(-1, keepdim=True).pow(1. / 2.0)
+				fea = x.div(norm)
+				return fea # (B, T, H, W, C)
+			else:
+				return x

@@ -221,6 +221,7 @@ class Kinetics(torch.utils.data.Dataset):
 			return clips, label, index, {}
 
 		else:
+			print(self._path_to_videos[index])
 			raise RuntimeError(
 				"Failed to fetch video after {} retries.".format(
 					self._num_retries

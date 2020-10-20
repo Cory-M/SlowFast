@@ -3,9 +3,11 @@ TRAIN:
   ENABLE: False
   DATASET: kinetics
   BATCH_SIZE: 64
+  PSEUDO_BATCH: 16
   EVAL_PERIOD: 2
   CHECKPOINT_PERIOD: 1
   AUTO_RESUME: True
+  CHECKPOINT_FILE_PATH: /home/keyu/keyu/ckpt/mining_080/checkpoint_epoch_00196.pyth
 DATA:
   NORMALIZATION: False
   TARGET_FPS: 25
@@ -61,19 +63,18 @@ MODEL:
   DROPOUT_RATE: 0.
   CLASSIFIER: LinearProbe
 TEST:
-  CHECKPOINT_FILE_PATH: /home/keyu/keyu/logs/eval/cvrl_no_hue_087_no_warmup/checkpoints/checkpoint_epoch_00046.pyth
   ENABLE: True
   DATASET: kinetics
-  BATCH_SIZE: 256
+  BATCH_SIZE: 64
 EVAL:
-  ENABLE: False
+  ENABLE: True
 DATA_LOADER:
   NUM_WORKERS: 8
   PIN_MEMORY: True
 NUM_GPUS: 8
 NUM_SHARDS: 1
 RNG_SEED: 0
-OUTPUT_DIR: /home/keyu/keyu/logs/eval/cvrl_no_hue_087_no_warmup
+OUTPUT_DIR: /home/keyu/keyu/logs/eval/mining080_196_lbs
 NCE:
   K: 16384
   T: 0.1

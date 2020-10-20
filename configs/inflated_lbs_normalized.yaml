@@ -3,13 +3,14 @@ TRAIN:
   ENABLE: False
   DATASET: kinetics
   BATCH_SIZE: 64
+  PSEUDO_BATCH: 16
   EVAL_PERIOD: 2
   CHECKPOINT_PERIOD: 1
   AUTO_RESUME: True
   CHECKPOINT_FILE_PATH: /home/keyu/keyu/ckpt/imagenet_pretrain.pyth
   CHECKPOINT_INFLATE: True
 DATA:
-  NORMALIZATION: False
+  NORMALIZATION: True
   TARGET_FPS: 25
   MULTI_CLIP_NUM: 1
   NUM_FRAMES: 32
@@ -74,7 +75,7 @@ DATA_LOADER:
 NUM_GPUS: 8
 NUM_SHARDS: 1
 RNG_SEED: 0
-OUTPUT_DIR: /home/keyu/keyu/logs/eval/imagenet_pretrain
+OUTPUT_DIR: /home/keyu/keyu/logs/eval/imagenet_lbs_normalized
 NCE:
   K: 16384
   T: 0.1

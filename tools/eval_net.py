@@ -86,7 +86,8 @@ def train_epoch(train_loader, model, classifier, optimizer, train_meter, cur_epo
 		loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
 		loss = loss_fun(out, labels)
 		
-		loss = loss / cfg.TRAIN.PSEUDO_BATCH
+		if cfg.TRAIN.PSEUDO_BATCH > 1:
+			loss = loss / (cfg.TRAIN.PSEUDO_BATCH/cfg.NUM_GPUS)
 		# check Nan Loss.
 		misc.check_nan_losses(loss)
 
@@ -271,7 +272,10 @@ def eval_prober(cfg):
 
 	# Setup logging format.
 	logging.setup_logging(cfg.OUTPUT_DIR)
-	tb_logger = SummaryWriter(cfg.OUTPUT_DIR)
+	if du.is_master_proc():
+		tb_logger = SummaryWriter(cfg.OUTPUT_DIR)
+	else:
+		tb_logger = None
 
 	# Print config.
 	logger.info("Train with config:")
@@ -303,7 +307,9 @@ def eval_prober(cfg):
 		logger.info("Load from given checkpoint file.")
 		checkpoint_epoch = cu.load_checkpoint(
 			cfg.TRAIN.CHECKPOINT_FILE_PATH,
-			{'model': model},
+			{'model': model,
+#			'classifier': classifier,
+			},
 			cfg.NUM_GPUS > 1,
 			inflation=cfg.TRAIN.CHECKPOINT_INFLATE,
 			convert_from_caffe2=cfg.TRAIN.CHECKPOINT_TYPE == "caffe2",

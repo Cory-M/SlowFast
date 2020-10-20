@@ -1,13 +1,14 @@
 LOG_PERIOD: 100
 TRAIN:
-  ENABLE: False
+  ENABLE: True
   DATASET: kinetics
   BATCH_SIZE: 64
   EVAL_PERIOD: 2
-  CHECKPOINT_PERIOD: 1
+  CHECKPOINT_PERIOD: 10
   AUTO_RESUME: True
-  CHECKPOINT_FILE_PATH: /home/keyu/keyu/ckpt/cvrl_no_hue/checkpoint_epoch_00087.pyth
+  CHECKPOINT_FILE_PATH: /home/keyu/keyu/ckpt/cvrl_shuffleBN/checkpoint_epoch_00196.pyth
 DATA:
+  PATH_TO_DATA_DIR: /home/keyu/keyu/data/UCF101
   NORMALIZATION: False
   TARGET_FPS: 25
   MULTI_CLIP_NUM: 1
@@ -44,36 +45,37 @@ BN:
   MOMENTUM: 0.1
   WEIGHT_DECAY: 0.0
 SOLVER:
-  BASE_LR: 32.0
+  BASE_LR: 0.1
   LR_POLICY: cosine
-  MAX_EPOCH: 100
+  MAX_EPOCH: 196
   MOMENTUM: 0.9
-  WEIGHT_DECAY: 0.0
-  WARMUP_EPOCHS: 0.0
-  WARMUP_START_LR: 32.0
+  WEIGHT_DECAY: 1e-4
+  WARMUP_EPOCHS: 34.0
+  WARMUP_START_LR: 0.01
   OPTIMIZING_METHOD: sgd
 MODEL:
-  NUM_CLASSES: 400
+  NUM_CLASSES: 101
   NUM_EMBEDDING: 128
   NUM_FEATURE: 2048
   ARCH: cvrl
   MODEL_NAME: ResNet
   LOSS_FUNC: cross_entropy
-  DROPOUT_RATE: 0.
+  DROPOUT_RATE: 0.5
   CLASSIFIER: LinearProbe
+  FEATURE_L2: False
 TEST:
   ENABLE: True
   DATASET: kinetics
   BATCH_SIZE: 64
 EVAL:
-  ENABLE: True
+  ENABLE: False
 DATA_LOADER:
   NUM_WORKERS: 8
   PIN_MEMORY: True
 NUM_GPUS: 8
 NUM_SHARDS: 1
 RNG_SEED: 0
-OUTPUT_DIR: /home/keyu/keyu/logs/eval/cvrl_no_hue_087_no_warmup
+OUTPUT_DIR: /home/keyu/keyu/logs/UCF_eval/UCF_shuffleBN_196_not_l2
 NCE:
   K: 16384
   T: 0.1
