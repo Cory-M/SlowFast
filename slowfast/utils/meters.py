@@ -443,17 +443,16 @@ class TrainMeter(object):
 		self.loss_total = 0.0
 		self.lr = None
 		# Current minibatch errors (smoothed over a window).
-		self.mb_top1_err = ScalarMeter(cfg.LOG_PERIOD)
-		self.mb_top5_err = ScalarMeter(cfg.LOG_PERIOD)
+		self.mb_noun_top1 = ScalarMeter(cfg.LOG_PERIOD)
+		self.mb_noun_top5 = ScalarMeter(cfg.LOG_PERIOD)
+		self.mb_verb_top1 = ScalarMeter(cfg.LOG_PERIOD)
+		self.mb_verb_top5 = ScalarMeter(cfg.LOG_PERIOD)
 		# NCE err
 		self.mb_nce_top1 = ScalarMeter(cfg.LOG_PERIOD)
 		self.mb_nce_top5 = ScalarMeter(cfg.LOG_PERIOD)
 		# Number of misclassified examples.
 		self.num_top1_mis = 0
 		self.num_top5_mis = 0
-		# Number of misclassified NCE examples
-		self.num_nce_top1 = 0
-		self.num_nce_top5 = 0
 
 		self.num_samples = 0
 
@@ -464,14 +463,17 @@ class TrainMeter(object):
 		self.loss.reset()
 		self.loss_total = 0.0
 		self.lr = None
-		self.mb_top1_err.reset()
-		self.mb_top5_err.reset()
+
+		self.mb_noun_top1.reset()
+		self.mb_noun_top5.reset()
+		self.mb_verb_top1.reset()
+		self.mb_verb_top5.reset()
+
 		self.mb_nce_top1.reset()
 		self.mb_nce_top5.reset()
+
 		self.num_top1_mis = 0
 		self.num_top5_mis = 0
-		self.num_nce_top1 = 0
-		self.num_nce_top5 = 0
 		self.num_samples = 0
 
 	def iter_tic(self):
@@ -486,12 +488,10 @@ class TrainMeter(object):
 		"""
 		self.iter_timer.pause()
 
-	def update_stats(self, top1_err, top5_err, nce_top1, nce_top5, loss, lr, mb_size):
+	def update_stats(self, noun_top1, noun_top5, verb_top1, verb_top5, nce_top1, nce_top5, loss, lr, mb_size):
 		"""
 		Update the current stats.
 		Args:
-			top1_err (float): top1 error rate.
-			top5_err (float): top5 error rate.
 			loss (float): loss value.
 			lr (float): learning rate.
 			mb_size (int): mini batch size.
@@ -503,15 +503,17 @@ class TrainMeter(object):
 
 		if not self._cfg.DATA.MULTI_LABEL:
 			# Current minibatch stats
-			self.mb_top1_err.add_value(top1_err)
-			self.mb_top5_err.add_value(top5_err)
+			self.mb_noun_top1.add_value(noun_top1)
+			self.mb_noun_top5.add_value(noun_top5)
+			self.mb_verb_top1.add_value(verb_top1)
+			self.mb_verb_top5.add_value(verb_top5)
+
 			self.mb_nce_top1.add_value(nce_top1)
 			self.mb_nce_top5.add_value(nce_top5)
+
 			# Aggregate stats
-			self.num_top1_mis += top1_err * mb_size
-			self.num_top5_mis += top5_err * mb_size
-			self.num_nce_top1 += nce_top1 * mb_size
-			self.num_nce_top1 += nce_top5 * mb_size
+			self.num_top1_mis += verb_top1 * mb_size
+			self.num_top5_mis += verb_top5 * mb_size
 
 	def log_iter_stats(self, cur_epoch, cur_iter):
 		"""
@@ -537,13 +539,24 @@ class TrainMeter(object):
 			"gpu_mem": "{:.2f} GB".format(misc.gpu_mem_usage()),
 		}
 		if not self._cfg.DATA.MULTI_LABEL:
-			stats["top1_err"] = self.mb_top1_err.get_win_median()
-			stats["top5_err"] = self.mb_top5_err.get_win_median()
-			stats['nce_top1'] = self.mb_nce_top1.get_win_median()
-			stats['nce_top5'] = self.mb_nce_top5.get_win_median()
+			stats["noun_top1_err"] = self.mb_noun_top1.get_win_median()
+			stats["noun_top5_err"] = self.mb_noun_top5.get_win_median()
+			stats["verb_top1_err"] = self.mb_verb_top1.get_win_median()
+			stats["verb_top5_err"] = self.mb_verb_top5.get_win_median()
+
+			stats['nce_top1_err'] = self.mb_nce_top1.get_win_median()
+			stats['nce_top5_err'] = self.mb_nce_top5.get_win_median()
 
 		logging.log_json_stats(stats)
-		return self.mb_top1_err.get_win_median(), self.mb_top5_err.get_win_median(), self.mb_nce_top1.get_win_avg(), self.mb_nce_top5.get_win_avg(), self.loss.get_win_median()
+		return_info = (self.mb_noun_top1.get_win_median(),
+						self.mb_noun_top5.get_win_median(),
+						self.mb_verb_top1.get_win_median(),
+						self.mb_verb_top5.get_win_median(),
+						self.mb_nce_top1.get_win_median(),
+						self.mb_nce_top5.get_win_median(),
+						self.loss.get_win_median(),
+					)
+		return return_info
 
 	def log_epoch_stats(self, cur_epoch):
 		"""
@@ -565,11 +578,11 @@ class TrainMeter(object):
 			"RAM": "{:.2f}/{:.2f} GB".format(*misc.cpu_mem_usage()),
 		}
 		if not self._cfg.DATA.MULTI_LABEL:
-			top1_err = self.num_top1_mis / self.num_samples
-			top5_err = self.num_top5_mis / self.num_samples
+			verb_top1_err = self.num_top1_mis / self.num_samples
+			verb_top5_err = self.num_top5_mis / self.num_samples
 			avg_loss = self.loss_total / self.num_samples
-			stats["top1_err"] = top1_err
-			stats["top5_err"] = top5_err
+			stats["verb_top1_err"] = verb_top1_err
+			stats["verb_top5_err"] = verb_top5_err
 			stats["loss"] = avg_loss
 		logging.log_json_stats(stats)
 
@@ -589,36 +602,47 @@ class ValMeter(object):
 		self.max_iter = max_iter
 		self.iter_timer = Timer()
 		# Current minibatch errors (smoothed over a window).
-		self.mb_top1_err = ScalarMeter(cfg.LOG_PERIOD)
-		self.mb_top5_err = ScalarMeter(cfg.LOG_PERIOD)
+		self.mb_noun_top1_err = ScalarMeter(cfg.LOG_PERIOD)
+		self.mb_noun_top5_err = ScalarMeter(cfg.LOG_PERIOD)
+		self.mb_verb_top1_err = ScalarMeter(cfg.LOG_PERIOD)
+		self.mb_verb_top5_err = ScalarMeter(cfg.LOG_PERIOD)
+
 		# Min errors (over the full val set).
-		self.min_top1_err = 100.0
-		self.min_top5_err = 100.0
+		self.min_noun_top1_err = 100.0
+		self.min_noun_top5_err = 100.0
+		self.min_verb_top1_err = 100.0
+		self.min_verb_top5_err = 100.0
+
 		# Number of misclassified examples.
-		self.num_top1_mis = 0
-		self.num_top5_mis = 0
+		self.num_noun_top1_mis = 0
+		self.num_noun_top5_mis = 0
+		self.num_verb_top1_mis = 0
+		self.num_verb_top5_mis = 0
+
 		self.num_samples = 0
 		self.all_preds = []
 		self.all_labels = []
 		
-		self.loss = ScalarMeter(cfg.LOG_PERIOD)
-		self.loss_total = 0.0
 
 	def reset(self):
 		"""
 		Reset the Meter.
 		"""
 		self.iter_timer.reset()
-		self.mb_top1_err.reset()
-		self.mb_top5_err.reset()
-		self.num_top1_mis = 0
-		self.num_top5_mis = 0
+		self.mb_noun_top1_err.reset()
+		self.mb_noun_top5_err.reset()
+		self.mb_verb_top1_err.reset()		
+		self.mb_verb_top5_err.reset()	
+
+		self.num_noun_top1_mis = 0
+		self.num_noun_top5_mis = 0
+		self.num_verb_top1_mis = 0
+		self.num_verb_top5_mis = 0
+
 		self.num_samples = 0
 		self.all_preds = []
 		self.all_labels = []
 
-		self.loss.reset()
-		self.loss_total = 0.0
 
 	def iter_tic(self):
 		"""
@@ -632,7 +656,7 @@ class ValMeter(object):
 		"""
 		self.iter_timer.pause()
 
-	def update_stats(self, loss, top1_err, top5_err, mb_size):
+	def update_stats(self, noun_top1, noun_top5, verb_top1, verb_top5, mb_size):
 		"""
 		Update the current stats.
 		Args:
@@ -640,14 +664,17 @@ class ValMeter(object):
 			top5_err (float): top5 error rate.
 			mb_size (int): mini batch size.
 		"""
-		self.mb_top1_err.add_value(top1_err)
-		self.mb_top5_err.add_value(top5_err)
-		self.num_top1_mis += top1_err * mb_size
-		self.num_top5_mis += top5_err * mb_size
-		self.num_samples += mb_size
+		self.mb_noun_top1_err.add_value(noun_top1)
+		self.mb_noun_top5_err.add_value(noun_top5)
+		self.mb_verb_top1_err.add_value(verb_top1)
+		self.mb_verb_top5_err.add_value(verb_top5)
 
-		self.loss.add_value(loss)
-		self.loss_total += loss * mb_size
+		self.num_noun_top1_mis += noun_top1 * mb_size
+		self.num_noun_top5_mis += noun_top5 * mb_size
+		self.num_verb_top1_mis += verb_top1 * mb_size
+		self.num_verb_top5_mis += verb_top5 * mb_size
+
+		self.num_samples += mb_size
 
 	def update_predictions(self, preds, labels):
 		"""
@@ -677,12 +704,14 @@ class ValMeter(object):
 			"iter": "{}/{}".format(cur_iter + 1, self.max_iter),
 			"time_diff": self.iter_timer.seconds(),
 			"eta": eta,
-			"loss": self.loss.get_win_median(),
 			"gpu_mem": "{:.2f} GB".format(misc.gpu_mem_usage()),
 		}
 		if not self._cfg.DATA.MULTI_LABEL:
-			stats["top1_err"] = self.mb_top1_err.get_win_median()
-			stats["top5_err"] = self.mb_top5_err.get_win_median()
+			stats["noun_top1_err"] = self.mb_noun_top1_err.get_win_median()
+			stats["noun_top5_err"] = self.mb_noun_top5_err.get_win_median()
+			stats["verb_top1_err"] = self.mb_verb_top1_err.get_win_median()
+			stats["verb_top5_err"] = self.mb_verb_top5_err.get_win_median()
+
 		logging.log_json_stats(stats)
 
 
@@ -705,19 +734,28 @@ class ValMeter(object):
 				torch.cat(self.all_labels).cpu().numpy(),
 			)
 		else:
-			top1_err = self.num_top1_mis / self.num_samples
-			top5_err = self.num_top5_mis / self.num_samples
-			self.min_top1_err = min(self.min_top1_err, top1_err)
-			self.min_top5_err = min(self.min_top5_err, top5_err)
+			noun_top1_err = self.num_noun_top1_mis / self.num_samples
+			noun_top5_err = self.num_noun_top5_mis / self.num_samples
+			verb_top1_err = self.num_verb_top1_mis / self.num_samples
+			verb_top5_err = self.num_verb_top5_mis / self.num_samples
 
-			stats["top1_err"] = top1_err
-			stats["top5_err"] = top5_err
-			stats["min_top1_err"] = self.min_top1_err
-			stats["min_top5_err"] = self.min_top5_err
-			stats["avg_loss"] = self.loss_total / self.num_samples
+			self.min_noun_top1_err = min(self.min_noun_top1_err, noun_top1_err)
+			self.min_noun_top5_err = min(self.min_noun_top5_err, noun_top5_err)
+			self.min_verb_top1_err = min(self.min_verb_top1_err, verb_top1_err)
+			self.min_verb_top5_err = min(self.min_verb_top5_err, verb_top5_err)
+
+			stats["noun_top1_err"] = noun_top1_err
+			stats["noun_top5_err"] = noun_top5_err
+			stats["verb_top1_err"] = verb_top1_err
+			stats["verb_top5_err"] = verb_top5_err
+
+			stats["min_noun_top1_err"] = self.min_noun_top1_err
+			stats["min_noun_top5_err"] = self.min_noun_top5_err
+			stats["min_verb_top1_err"] = self.min_verb_top1_err
+			stats["min_verb_top5_err"] = self.min_verb_top5_err
+
 		logging.log_json_stats(stats)
-		return top1_err, top5_err, self.loss_total / self.num_samples
-
+		return noun_top1_err, noun_top5_err, verb_top1_err, verb_top5_err
 
 def get_map(preds, labels):
 	"""

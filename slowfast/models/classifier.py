@@ -30,12 +30,15 @@ class LinearProbe(nn.Module):
 			in_channel = cfg.MODEL.NUM_FEATURE
 		else: 						# eval embedding
 			in_channel = cfg.MODEL.NUM_EMBEDDING
-		out_channel = cfg.MODEL.NUM_CLASSES
-		self.fc = nn.Linear(in_channel, out_channel)
-		# TODO
-		# self.fc = nn.Linear(cfg.MODEL.NUM_FEATURE, cfg.MODEL.NUM_CLASSES)
+
+		out_verb = cfg.MODEL.NUM_VERB_CLASSES
+		out_noun = cfg.MODEL.NUM_NOUN_CLASSES
+
+		self.fc_verb = nn.Linear(in_channel, out_verb)
+		self.fc_noun = nn.Linear(in_channel, out_noun)
+
 	def forward(self, x):
-		return self.fc(x)
+		return self.fc_verb(x), self.fc_noun(x)
 
 	
 def build_classifier(cfg):

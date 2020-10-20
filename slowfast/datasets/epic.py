@@ -80,16 +80,19 @@ class Epic(torch.utils.data.Dataset):
 		"""
 		Construct the video loader.
 		"""
-		
+		path_data_file = self.cfg.DATA.PATH_TO_DATA_DIR if not self.cfg.DATA.PATH_TO_DATA_FILE else self.cfg.DATA.PATH_TO_DATA_FILE
 		if self.mode == 'test':
+			# forward the frames and save the feature as np
+			# with the given backbone
 			if self.cfg.TEST.SECTION == 'train':
-				path_to_file = os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, "EPIC_{}_action_labels.csv".format(self.cfg.TEST.SECTION))
+				path_to_file = os.path.join(path_data_file, "EPIC_{}_action_labels.csv".format(self.cfg.TEST.SECTION))
 			else:
-				path_to_file = os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, "EPIC_test_{}_timestamps_full.csv".format(self.cfg.TEST.SECTION))
+				path_to_file = os.path.join(path_data_file, "EPIC_test_{}_timestamps_full.csv".format(self.cfg.TEST.SECTION))
 		else:
-			path_to_file = os.path.join(
-				path_to_file = os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, "EPIC_{}_action_labels.csv".format(self.mode))
-			)
+			# do normal training and validation
+			# mode: train or val
+			path_to_file = os.path.join(path_data_file, "{}.csv".format(self.mode))
+
 		assert PathManager.exists(path_to_file), "{} dir not found".format(
 			path_to_file
 		)
@@ -105,10 +108,10 @@ class Epic(torch.utils.data.Dataset):
 			row = df.iloc[i]
 			for idx in range(self._num_clips):
 				self._uids.append(row['uid'])
-				if self.mode == 'test' and self.cfg.TEST.SECTION == 'train':
-					self._path_to_folder.append(os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, self.cfg.TEST.SECTION, row['participant_id'], row['video_id']))
-				else:
-					self._path_to_folder.append(os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, self.mode, row['participant_id'], row['video_id']))
+				if self.mode == 'test' and not self.cfg.TEST.SECTION == 'train': # forward s1 or s2
+					self._path_to_folder.append(os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, 'test', row['participant_id'], row['video_id']))
+				else: # train, val or forward trainset 
+					self._path_to_folder.append(os.path.join(self.cfg.DATA.PATH_TO_DATA_DIR, 'train', row['participant_id'], row['video_id']))
 				self._frame_range.append([row['start_frame'], row['stop_frame']])
 				if self.mode == 'test':
 					self._verb_labels.append(-1)
@@ -222,10 +225,12 @@ class Epic(torch.utils.data.Dataset):
 			clip = utils.pack_pathway_output(self.cfg, clip)
 			clips.append(clip)
 
-		label = self._verb_labels[index]
+		label = [self._verb_labels[index], self._noun_labels[index]]
 		stid = self._spatial_temporal_idx[index]
 		uid = self._uids[index]
-		return clips, label, index, {}, stid, uid
+		
+		# label: verb_class, noun_class
+		return clips, label, index, {'stid': stid, 'uid': uid}
 
 	def __len__(self):
 		"""
