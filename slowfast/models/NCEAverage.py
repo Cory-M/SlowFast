@@ -68,6 +68,10 @@ class MemoryMoCo(nn.Module):
 			target = torch.topk(similarity, dim=1, k=self.topk)[1]
 			target = torch.zeros_like(similarity).scatter_(
 						dim=1, index=target, value=1) # convert to multi-hot
+		elif self.selection == 'ground_truth':
+			gt_label = self.ground_truth.expand(batchSize, -1)
+			cur_label = labels.view(-1, 1).expand(-1, self.queueSize)
+			target = (gt_label == cur_label).float() # [bs, queue_size]
 		else:
 			raise NotImplementedError('selection method {} is not supported'.format(self.selection))
 
