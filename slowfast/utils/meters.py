@@ -552,7 +552,10 @@ class TrainMeter(object):
 			stats['nce_top1'] = self.mb_nce_top1.get_win_median()
 			stats['nce_top5'] = self.mb_nce_top5.get_win_median()
 			stats['pos_num'] = self.mb_pos_num.get_win_avg()
-			mining_acc = self.mb_mining_num.get_win_sum() / self.mb_pos_num.get_win_sum() * 100.0
+			if self.mb_pos_num.get_win_sum() != 0:
+				mining_acc = self.mb_mining_num.get_win_sum() / self.mb_pos_num.get_win_sum() * 100.0
+			else:
+				mining_acc = -1
 			stats['mining_acc'] = mining_acc
 
 		logging.log_json_stats(stats)
