@@ -343,7 +343,7 @@ class SlowFast(nn.Module):
 					width_per_group * 32,
 					width_per_group * 32 // cfg.SLOWFAST.BETA_INV,
 				],
-				num_feature=cfg.MODEL.NUM_FEATURES,
+				num_feature=cfg.MODEL.NUM_FEATURE,
 				pool_size=[
 					[
 						cfg.DATA.NUM_FRAMES
@@ -366,7 +366,7 @@ class SlowFast(nn.Module):
 					width_per_group * 32,
 					width_per_group * 32 // cfg.SLOWFAST.BETA_INV,
 				],
-				num_feature=cfg.MODEL.NUM_FEATURES,
+				num_embedding=cfg.MODEL.NUM_EMBEDDING,
 				pool_size=[
 					[
 						cfg.DATA.NUM_FRAMES
@@ -383,6 +383,8 @@ class SlowFast(nn.Module):
 				],
 				dropout_rate=cfg.MODEL.DROPOUT_RATE,
 				act_func=cfg.MODEL.HEAD_ACT,
+				return_feature=True,
+				feature_l2=cfg.MODEL.FEATURE_L2
 			)
 
 	def forward(self, x, bboxes=None):	
@@ -560,7 +562,7 @@ class ResNet(nn.Module):
 		if self.enable_detection:
 			self.head = head_helper.ResNetRoIHead(
 				dim_in=[width_per_group * 32],
-				num_feature=cfg.MODEL.NUM_FEATURES,
+				num_feature=cfg.MODEL.NUM_FEATURE,
 				pool_size=[[cfg.DATA.NUM_FRAMES // pool_size[0][0], 1, 1]],
 				resolution=[[cfg.DETECTION.ROI_XFORM_RESOLUTION] * 2],
 				scale_factor=[cfg.DETECTION.SPATIAL_SCALE_FACTOR],

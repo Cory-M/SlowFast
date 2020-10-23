@@ -192,13 +192,74 @@ def load_checkpoint(
 		path_to_checkpoint
 	), "Checkpoint '{}' not found".format(path_to_checkpoint)
 	# Account for the DDP wrapper in the multi-gpu setting.
+
+	if convert_from_caffe2:
+		ms = model_dict['model'].module if data_parallel else model_dict['model'] 
+		with PathManager.open(path_to_checkpoint, "rb") as f:
+			caffe2_checkpoint = pickle.load(f, encoding="latin1")
+		state_dict = OrderedDict()
+		name_convert_func = get_name_convert_func()
+		for key in caffe2_checkpoint["blobs"].keys():
+			converted_key = name_convert_func(key)
+			converted_key = c2_normal_to_sub_bn(converted_key, ms.state_dict())
+			if converted_key in ms.state_dict():
+				c2_blob_shape = caffe2_checkpoint["blobs"][key].shape
+				model_blob_shape = ms.state_dict()[converted_key].shape
+				# Load BN stats to Sub-BN.
+				if (
+					len(model_blob_shape) == 1
+					and len(c2_blob_shape) == 1
+					and model_blob_shape[0] > c2_blob_shape[0]
+					and model_blob_shape[0] % c2_blob_shape[0] == 0
+				):
+					caffe2_checkpoint["blobs"][key] = np.concatenate(
+						[caffe2_checkpoint["blobs"][key]]
+						* (model_blob_shape[0] // c2_blob_shape[0])
+					)
+					c2_blob_shape = caffe2_checkpoint["blobs"][key].shape
+
+				if c2_blob_shape == tuple(model_blob_shape):
+					state_dict[converted_key] = torch.tensor(
+						caffe2_checkpoint["blobs"][key]
+					).clone()
+					logger.info(
+						"{}: {} => {}: {}".format(
+							key,
+							c2_blob_shape,
+							converted_key,
+							tuple(model_blob_shape),
+						)
+					)
+				else:
+					logger.warn(
+						"!! {}: {} does not match {}: {}".format(
+							key,
+							c2_blob_shape,
+							converted_key,
+							tuple(model_blob_shape),
+						)
+					)
+			else:
+				if not any(
+					prefix in key for prefix in ["momentum", "lr", "model_iter"]
+				):
+					logger.warn(
+						"!! {}: can not be converted, got {}".format(
+							key, converted_key
+						)
+					)
+		ms.load_state_dict(state_dict, strict=False)
+		epoch = -1
+		return epoch
+
+	# Load the checkpoint on CPU to avoid GPU mem spike.
 	ms_dict = {}
 	for k, v in model_dict.items():
 		try:
 			ms_dict[k] = v.module if data_parallel and v.module else v
 		except:
 			ms_dict[k] = v
-	# Load the checkpoint on CPU to avoid GPU mem spike.
+
 	with PathManager.open(path_to_checkpoint, "rb") as f:
 		checkpoint = torch.load(f, map_location="cpu")
 	if inflation:
@@ -224,3 +285,64 @@ def load_checkpoint(
 	else:
 		epoch = -1
 	return epoch
+
+def c2_normal_to_sub_bn(key, model_keys):
+	"""
+	Convert BN parameters to Sub-BN parameters if model contains Sub-BNs.
+	Args:
+		key (OrderedDict): source dict of parameters.
+		mdoel_key (OrderedDict): target dict of parameters.
+	Returns:
+		new_sd (OrderedDict): converted dict of parameters.
+	"""
+	if "bn.running_" in key:
+		if key in model_keys:
+			return key
+
+		new_key = key.replace("bn.running_", "bn.split_bn.running_")
+		if new_key in model_keys:
+			return new_key
+	else:
+		return key
+
+
+def normal_to_sub_bn(checkpoint_sd, model_sd):
+	"""
+	Convert BN parameters to Sub-BN parameters if model contains Sub-BNs.
+	Args:
+		checkpoint_sd (OrderedDict): source dict of parameters.
+		model_sd (OrderedDict): target dict of parameters.
+	Returns:
+		new_sd (OrderedDict): converted dict of parameters.
+	"""
+	for key in model_sd:
+		if key not in checkpoint_sd:
+			if "bn.split_bn." in key:
+				load_key = key.replace("bn.split_bn.", "bn.")
+				bn_key = key.replace("bn.split_bn.", "bn.bn.")
+				checkpoint_sd[key] = checkpoint_sd.pop(load_key)
+				checkpoint_sd[bn_key] = checkpoint_sd[key]
+
+	for key in model_sd:
+		if key in checkpoint_sd:
+			model_blob_shape = model_sd[key].shape
+			c2_blob_shape = checkpoint_sd[key].shape
+
+			if (
+				len(model_blob_shape) == 1
+				and len(c2_blob_shape) == 1
+				and model_blob_shape[0] > c2_blob_shape[0]
+				and model_blob_shape[0] % c2_blob_shape[0] == 0
+			):
+				before_shape = checkpoint_sd[key].shape
+				checkpoint_sd[key] = torch.cat(
+					[checkpoint_sd[key]]
+					* (model_blob_shape[0] // c2_blob_shape[0])
+				)
+				logger.info(
+					"{} {} -> {}".format(
+						key, before_shape, checkpoint_sd[key].shape
+					)
+				)
+	return checkpoint_sd
+
