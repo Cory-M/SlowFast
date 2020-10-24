@@ -439,29 +439,26 @@ class TrainMeter(object):
 		self.epoch_iters = epoch_iters
 		self.MAX_EPOCH = cfg.SOLVER.MAX_EPOCH * epoch_iters
 		self.iter_timer = Timer()
-		self.loss = ScalarMeter(cfg.LOG_PERIOD)
-		self.loss_total = 0.0
 		self.lr = None
-		# Current minibatch errors (smoothed over a window).
-		self.mb_top1_err = ScalarMeter(cfg.LOG_PERIOD)
-		self.mb_top5_err = ScalarMeter(cfg.LOG_PERIOD)
-		# Number of misclassified examples.
-		self.num_top1_mis = 0
-		self.num_top5_mis = 0
+
+		self.metric = {'mb': dict(), 'total': dict()}
+		for metric_name in cfg.METRIC.TRAIN:
+			# mini batch metrics (used for iter_log)
+			self.metric['mb'][metric_name] = ScalarMeter(cfg.LOG_PERIOD)
+			# total metrics (used for epoch_log)
+			self.metric['total'][metric_name] = 0.0
+		
 		self.num_samples = 0
 
 	def reset(self):
 		"""
 		Reset the Meter.
 		"""
-		self.loss.reset()
-		self.loss_total = 0.0
 		self.lr = None
-		self.mb_top1_err.reset()
-		self.mb_top5_err.reset()
-		self.num_top1_mis = 0
-		self.num_top5_mis = 0
 		self.num_samples = 0
+		for metric_name in self._cfg.METRIC.TRAIN:
+			self.metric['mb'][metric_name].reset()
+			self.metric['total'][metric_name] = 0.0
 
 	def iter_tic(self):
 		"""
@@ -475,7 +472,7 @@ class TrainMeter(object):
 		"""
 		self.iter_timer.pause()
 
-	def update_stats(self, top1_err, top5_err, loss, lr, mb_size):
+	def update_stats(self, metric_dict, lr, mb_size):
 		"""
 		Update the current stats.
 		Args:
@@ -485,18 +482,15 @@ class TrainMeter(object):
 			lr (float): learning rate.
 			mb_size (int): mini batch size.
 		"""
-		self.loss.add_value(loss)
 		self.lr = lr
-		self.loss_total += loss * mb_size
 		self.num_samples += mb_size
 
 		if not self._cfg.DATA.MULTI_LABEL:
 			# Current minibatch stats
-			self.mb_top1_err.add_value(top1_err)
-			self.mb_top5_err.add_value(top5_err)
-			# Aggregate stats
-			self.num_top1_mis += top1_err * mb_size
-			self.num_top5_mis += top5_err * mb_size
+			assert (metric_dict.keys() == self.metric['mb'].keys())
+			for k, v in metric_dict.items():
+				self.metric['mb'][k].add_value(v)
+				self.metric['total'][k] += v * mb_size
 
 	def log_iter_stats(self, cur_epoch, cur_iter):
 		"""
@@ -517,15 +511,14 @@ class TrainMeter(object):
 			"iter": "{}/{}".format(cur_iter + 1, self.epoch_iters),
 			"time_diff": self.iter_timer.seconds(),
 			"eta": eta,
-			"loss": self.loss.get_win_avg(),
 			"lr": self.lr,
 			"gpu_mem": "{:.2f} GB".format(misc.gpu_mem_usage()),
 		}
 		if not self._cfg.DATA.MULTI_LABEL:
-			stats["top1_err"] = self.mb_top1_err.get_win_avg()
-			stats["top5_err"] = self.mb_top5_err.get_win_avg()
+			for k, v in self.metric['mb'].items():
+				stats[k] = v.get_win_avg()
 		logging.log_json_stats(stats)
-		return self.mb_top1_err.get_win_avg(), self.mb_top5_err.get_win_avg(), self.loss.get_win_avg()
+		return {k: v.get_win_avg() for k, v in self.metric['mb'].items()}
 
 	def log_epoch_stats(self, cur_epoch):
 		"""
@@ -547,12 +540,8 @@ class TrainMeter(object):
 			"RAM": "{:.2f}/{:.2f} GB".format(*misc.cpu_mem_usage()),
 		}
 		if not self._cfg.DATA.MULTI_LABEL:
-			top1_err = self.num_top1_mis / self.num_samples
-			top5_err = self.num_top5_mis / self.num_samples
-			avg_loss = self.loss_total / self.num_samples
-			stats["top1_err"] = top1_err
-			stats["top5_err"] = top5_err
-			stats["loss"] = avg_loss
+			for k, v in self.metric['total'].items():
+				stats[k] = v / self.num_samples
 		logging.log_json_stats(stats)
 
 
@@ -570,37 +559,34 @@ class ValMeter(object):
 		self._cfg = cfg
 		self.max_iter = max_iter
 		self.iter_timer = Timer()
-		# Current minibatch errors (smoothed over a window).
-		self.mb_top1_err = ScalarMeter(cfg.LOG_PERIOD)
-		self.mb_top5_err = ScalarMeter(cfg.LOG_PERIOD)
-		# Min errors (over the full val set).
-		self.min_top1_err = 100.0
-		self.min_top5_err = 100.0
 		# Number of misclassified examples.
-		self.num_top1_mis = 0
-		self.num_top5_mis = 0
 		self.num_samples = 0
 		self.all_preds = []
 		self.all_labels = []
 		
-		self.loss = ScalarMeter(cfg.LOG_PERIOD)
-		self.loss_total = 0.0
+		self.metric = {'mb': dict(), 'total': dict(), 'min': dict()}
+		for metric_name in cfg.METRIC.EVAL:
+			# mini batch metrics (used for iter_log)
+			self.metric['mb'][metric_name] = ScalarMeter(cfg.LOG_PERIOD)
+			# total metrics (used for epoch_log)
+			self.metric['total'][metric_name] = 0.0
+
+		for metric_name in cfg.METRIC.EVAL_MIN:
+			# min erros (over the full val set, used for epoch_log)
+			self.metric['min'][metric_name] = 100.0
 
 	def reset(self):
 		"""
 		Reset the Meter.
 		"""
 		self.iter_timer.reset()
-		self.mb_top1_err.reset()
-		self.mb_top5_err.reset()
-		self.num_top1_mis = 0
-		self.num_top5_mis = 0
 		self.num_samples = 0
 		self.all_preds = []
 		self.all_labels = []
 
-		self.loss.reset()
-		self.loss_total = 0.0
+		for metric_name in self._cfg.METRIC.EVAL:
+			self.metric['mb'][metric_name].reset()
+			self.metric['total'][metric_name] = 0.0
 
 	def iter_tic(self):
 		"""
@@ -614,7 +600,7 @@ class ValMeter(object):
 		"""
 		self.iter_timer.pause()
 
-	def update_stats(self, loss, top1_err, top5_err, mb_size):
+	def update_stats(self, metric_dict, mb_size):
 		"""
 		Update the current stats.
 		Args:
@@ -622,14 +608,12 @@ class ValMeter(object):
 			top5_err (float): top5 error rate.
 			mb_size (int): mini batch size.
 		"""
-		self.mb_top1_err.add_value(top1_err)
-		self.mb_top5_err.add_value(top5_err)
-		self.num_top1_mis += top1_err * mb_size
-		self.num_top5_mis += top5_err * mb_size
 		self.num_samples += mb_size
-
-		self.loss.add_value(loss)
-		self.loss_total += loss * mb_size
+		# Current minibatch stats
+		assert (metric_dict.keys() == self.metric['mb'].keys())
+		for k, v in metric_dict.items():
+			self.metric['mb'][k].add_value(v)
+			self.metric['total'][k] += v * mb_size
 
 	def update_predictions(self, preds, labels):
 		"""
@@ -659,12 +643,11 @@ class ValMeter(object):
 			"iter": "{}/{}".format(cur_iter + 1, self.max_iter),
 			"time_diff": self.iter_timer.seconds(),
 			"eta": eta,
-			"loss": self.loss.get_win_avg(),
 			"gpu_mem": "{:.2f} GB".format(misc.gpu_mem_usage()),
 		}
 		if not self._cfg.DATA.MULTI_LABEL:
-			stats["top1_err"] = self.mb_top1_err.get_win_avg()
-			stats["top5_err"] = self.mb_top5_err.get_win_avg()
+			for k, v in self.metric['mb'].items():
+				stats[k] = v.get_win_avg()
 		logging.log_json_stats(stats)
 
 
@@ -687,19 +670,14 @@ class ValMeter(object):
 				torch.cat(self.all_labels).cpu().numpy(),
 			)
 		else:
-			top1_err = self.num_top1_mis / self.num_samples
-			top5_err = self.num_top5_mis / self.num_samples
-			self.min_top1_err = min(self.min_top1_err, top1_err)
-			self.min_top5_err = min(self.min_top5_err, top5_err)
+			for k, v in self.metric['total'].items():
+				stats[k] = v / self.num_samples
+			for k, v in self.metric['min'].items():
+				v = min(v, stats[k])
+				stats['min_' + k] = v
 
-			stats["top1_err"] = top1_err
-			stats["top5_err"] = top5_err
-			stats["min_top1_err"] = self.min_top1_err
-			stats["min_top5_err"] = self.min_top5_err
-			stats["avg_loss"] = self.loss_total / self.num_samples
 		logging.log_json_stats(stats)
-		return top1_err, top5_err, self.loss_total / self.num_samples
-
+		return {k: v / self.num_samples for k, v in self.metric['total'].items()}
 
 def get_map(preds, labels):
 	"""

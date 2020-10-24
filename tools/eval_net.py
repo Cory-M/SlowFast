@@ -122,18 +122,20 @@ def train_epoch(train_loader, model, classifier, optimizer, train_meter, cur_epo
 
 		# Update and log stats.
 		train_meter.update_stats(
-			top1_err, top5_err, loss, lr, out.size(0) * cfg.NUM_GPUS
+			{'top1_err': top1_err,
+			'top5_err': top5_err,
+			'loss': loss,
+			},
+			lr, out.size(0) * cfg.NUM_GPUS
 		)
 		train_meter.iter_toc()
 		
 		iter_stats = train_meter.log_iter_stats(cur_epoch, cur_iter)
 
 		if du.is_master_proc() and (cur_iter + 1) % cfg.LOG_PERIOD == 0:
-			top1_err, top5_err, loss = iter_stats
 			step = cur_epoch * len(train_loader) + cur_iter
-			tb_logger.add_scalar('train_loss', loss, step)
-			tb_logger.add_scalar('top1_err', top1_err, step)
-			tb_logger.add_scalar('top5_err', top5_err, step)
+			for k, v in iter_stats.items():
+				tb_logger.add_scalar(k, v, step)
 
 		train_meter.iter_tic()
 
@@ -208,7 +210,11 @@ def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logg
 		val_meter.iter_toc()
 		# Update and log stats.
 		val_meter.update_stats(
-			loss, top1_err, top5_err, feature.size(0) * cfg.NUM_GPUS
+			{'loss': loss,
+			'top1_err': top1_err,
+			'top5_err': top5_err,
+			},
+			feature.size(0) * cfg.NUM_GPUS
 		)
 
 		val_meter.log_iter_stats(cur_epoch, cur_iter)
@@ -221,14 +227,13 @@ def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logg
 		gt_labels, scores = du.all_gather([gt_labels, scores])
 		
 	# Log epoch stats.
-	top1_err, top5_err, loss = val_meter.log_epoch_stats(cur_epoch)
+	val_epoch_stats = val_meter.log_epoch_stats(cur_epoch)
 	if du.is_master_proc():
 		step = cur_epoch * len(val_loader) + cur_iter
 		mAP = aps(gt_labels.cpu().numpy(), scores.cpu().numpy())
 		logger.info('epoch {} mAP = {}'.format(cur_epoch, mAP))
-		tb_logger.add_scalar('val_loss', loss, step)
-		tb_logger.add_scalar('val_top1_err', top1_err, step)
-		tb_logger.add_scalar('val_top5_err', top5_err, step)
+		for k, v in val_epoch_stats.items():
+			tb_logger.add_scalar('val_'+k, v, step)
 		tb_logger.add_scalar('val_mAP', mAP, step)
 
 	del gt_labels, scores

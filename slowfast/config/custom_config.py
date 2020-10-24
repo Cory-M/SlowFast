@@ -12,4 +12,9 @@ def add_custom_config(_C):
 	_C.NCE.M = 0.5
 	_C.NCE.ALPHA = 0.999
 	_C.MODEL.FEATURE_L2 = True
+
+	_C.METRIC = CfgNode()
+	_C.METRIC.TRAIN = ['top1_err', 'top5_err', 'loss']
+	_C.METRIC.EVAL = ['top1_err', 'top5_err', 'loss']
+	_C.METRIC.EVAL_MIN = ['top1_err', 'top5_err']
 	pass
