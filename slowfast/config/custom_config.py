@@ -17,4 +17,10 @@ def add_custom_config(_C):
 	_C.METRIC.TRAIN = ['top1_err', 'top5_err', 'loss']
 	_C.METRIC.EVAL = ['top1_err', 'top5_err', 'loss']
 	_C.METRIC.EVAL_MIN = ['top1_err', 'top5_err']
+
+	_C.DATA.PATH_TO_DATA_FILE = "./meta/"
+
+	_C.MODEL.NUM_VERB_CLASSES = 125
+	_C.MODEL.NUM_NOUN_CLASSES = 331
+
 	pass

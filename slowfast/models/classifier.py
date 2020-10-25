@@ -21,16 +21,29 @@ class SimpleClassifier(nn.Module):
 class LinearProbe(nn.Module):
 	def __init__(self, cfg):
 		super(LinearProbe, self).__init__()
-		input_size = cfg.MODEL.NUM_FEATURE
-		self.fc = nn.Linear(input_size, cfg.MODEL.NUM_CLASSES)
-		self.act = nn.Softmax(dim=4)
-		# TODO
-		# self.fc = nn.Linear(cfg.MODEL.NUM_FEATURE, cfg.MODEL.NUM_CLASSES)
+		in_size = cfg.MODEL.NUM_FEATURE
+		self.epic = False
+		if cfg.TRAIN.DATASET == 'epic':
+			self.epic = True
+			self.fc_verb = nn.Linear(in_size, cfg.MODEL.NUM_VERB_CLASSES)
+			self.fc_noun = nn.Linear(in_size, cfg.MODEL.NUM_NOUN_CLASSES)
+			self.act_verb = nn.Softmax(dim=4)
+			self.act_noun = nn.Softmax(dim=4)
+		else:
+			self.fc = nn.Linear(in_size, cfg.MODEL.NUM_CLASSES)
+			self.act = nn.Softmax(dim=4)
+
 	def forward(self, x):
-		x = self.fc(x)
-		if not self.training:
-			x = self.act(x)
-		return x
+		if self.epic:
+			v, n = self.fc_verb(x), self.fc_noun(x)
+			if not self.training:
+				v, n = self.act_verb(v), self.act_noun(n)
+			return v, n
+		else:
+			x = self.fc(x)
+			if not self.training:
+				x = self.act(x)
+			return x
 
 	
 def build_classifier(cfg):

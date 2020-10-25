@@ -65,8 +65,9 @@ def train_epoch(train_loader, model, classifier, optimizer, train_meter, cur_epo
 			inputs = [x.cuda(non_blocking=True) for x in inputs]
 		else:
 			inputs = inputs.cuda(non_blocking=True)
-
-		labels = labels.cuda()
+		
+		verb_label, noun_label = labels
+		verb_label, noun_label = verb_label.cuda(), noun_label.cuda()
 		for key, val in meta.items():
 			if isinstance(val, (list,)):
 				for i in range(len(val)):
@@ -80,21 +81,23 @@ def train_epoch(train_loader, model, classifier, optimizer, train_meter, cur_epo
 
 		with torch.no_grad():
 			feature = model(inputs)
-		# TODO: check dimension
-		out = classifier(feature.detach()).mean([1, 2, 3])
-	
-		loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
-		loss = loss_fun(out, labels)
+
+		out = classifier(feature.detach())
+		verb_out, noun_out = [x.mean([1, 2, 3]) for x in out]
+
+		v_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction='mean')
+		n_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction='mean')
+		v_loss = v_fun(verb_out, verb_label)
+		n_loss = n_fun(noun_out, noun_label)
+		loss = v_loss + n_loss
 		
 		if cfg.TRAIN.PSEUDO_BATCH > 1:
 			loss = loss / (cfg.TRAIN.PSEUDO_BATCH/cfg.NUM_GPUS)
+
 		# check Nan Loss.
 		misc.check_nan_losses(loss)
 
 		# Perform the backward pass
-#		optimizer.zero_grad()
-#		if cfg.TRAIN.PSEUDO_BATCH > 1:
-				
 		loss.backward()
 
 		# Update the parameters.
@@ -102,31 +105,36 @@ def train_epoch(train_loader, model, classifier, optimizer, train_meter, cur_epo
 			optimizer.step()
 			optimizer.zero_grad()
 
-		# Compute the errors.
-		num_topks_correct = metrics.topks_correct(out, labels, (1, 5))
-		top1_err, top5_err = [
-			(1.0 - x / out.size(0)) * 100.0 for x in num_topks_correct
-		]
+		n_topks_correct = metrics.topks_correct(noun_out, noun_label, (1, 5))
+		v_topks_correct = metrics.topks_correct(verb_out, verb_label, (1, 5))
+		noun_top1, noun_top5 = [
+			(1.0 - x / verb_out.size(0)) * 100.0 for x in n_topks_correct]
+		verb_top1, verb_top5 = [
+			(1.0 - x / verb_out.size(0)) * 100.0 for x in v_topks_correct]
 
 		# Gather all the predictions across all the devices.
 		if cfg.NUM_GPUS > 1:
-			loss, top1_err, top5_err = du.all_reduce(
-				[loss, top1_err, top5_err]
+			loss, noun_top1, noun_top5, verb_top1, verb_top5 = du.all_reduce(
+				[loss, noun_top1, noun_top5, verb_top1, verb_top5]
 			)
 		# Copy the stats from GPU to CPU (sync point).
-		loss, top1_err, top5_err = (
+		loss, noun_top1, noun_top5, verb_top1, verb_top5 = (
 			loss.item(),
-			top1_err.item(),
-			top5_err.item(),
+			noun_top1.item(),
+			noun_top5.item(),
+			verb_top1.item(),
+			verb_top5.item(),
 		)
 
 		# Update and log stats.
 		train_meter.update_stats(
-			{'top1_err': top1_err,
-			'top5_err': top5_err,
+			{'noun_top1_err': noun_top1,
+			'noun_top5_err': noun_top5,
+			'verb_top1_err': verb_top1, 
+			'verb_top5_err': verb_top5,
 			'loss': loss,
 			},
-			lr, out.size(0) * cfg.NUM_GPUS
+			lr, verb_out.size(0) * cfg.NUM_GPUS
 		)
 		train_meter.iter_toc()
 		
@@ -135,7 +143,7 @@ def train_epoch(train_loader, model, classifier, optimizer, train_meter, cur_epo
 		if du.is_master_proc() and (cur_iter + 1) % cfg.LOG_PERIOD == 0:
 			step = cur_epoch * len(train_loader) + cur_iter
 			for k, v in iter_stats.items():
-				tb_logger.add_scalar(k, v, step)
+				tb_logger.add_scalar('train/'+k, v, step)
 
 		train_meter.iter_tic()
 
@@ -162,9 +170,11 @@ def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logg
 	classifier.eval()
 	
 	val_meter.iter_tic()
-
-	gt_labels = []
-	scores = []
+	
+	gt_noun_labels = []
+	gt_verb_labels = []
+	noun_scores = []
+	verb_scores = []
 	
 	for cur_iter, (inputs, labels, _, meta) in enumerate(val_loader):
 		inputs = inputs[0]
@@ -173,8 +183,11 @@ def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logg
 		else:
 			inputs = inputs.cuda(non_blocking=True)
 
-		labels = labels.cuda()
-		gt_labels.append(F.one_hot(labels, 400))
+		verb_label, noun_label = labels
+		action_label = verb_label * cfg.MODEL.NUM_NOUN_CLASSES + noun_label #TODO: double-check
+		verb_label, noun_label, action_label = verb_label.cuda(), noun_label.cuda(), action_label.cuda()
+		gt_noun_labels.append(F.one_hot(noun_label, cfg.MODEL.NUM_NOUN_CLASSES))
+		gt_verb_labels.append(F.one_hot(verb_label, cfg.MODEL.NUM_VERB_CLASSES))
 
 		for key, val in meta.items():
 			if isinstance(val, (list,)):
@@ -184,35 +197,48 @@ def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logg
 				meta[key] = val.cuda(non_blocking=True)
 
 		feature = model(inputs)
-		inf_cls = classifier(feature).mean([1, 2, 3])
+		inf_out = classifier(feature)
+		inf_verb, inf_noun = [x.mean([1, 2, 3]) for x in inf_out]
+		bs = inf_verb.size(0)
+		inf_action = torch.bmm(inf_verb.view(bs, -1, 1), inf_noun.view(bs, 1, -1)).view(bs, -1) # [bs, verb x noun]
+		verb_scores.append(inf_verb)
+		noun_scores.append(inf_noun)
 
-		scores.append(inf_cls)
-		# Compute the errors.
-		num_topks_correct = metrics.topks_correct(inf_cls, labels, (1, 5))
-
-		# Compute the NCE loss on validation set
-		loss_func = losses.get_loss_func('cross_entropy')(reduction="mean")
-		loss = loss_func(inf_cls, labels)
-
+		# Compute the accuracy
+		noun_topks_correct = metrics.topks_correct(inf_noun, noun_label, (1, 5))
+		verb_topks_correct = metrics.topks_correct(inf_verb, verb_label, (1, 5))
+		action_topks_correct = metrics.topks_correct(inf_action, action_label, (1, 5))
 
 		# Combine the errors across the GPUs.
-		top1_err, top5_err = [
-			(1.0 - x / feature.size(0)) * 100.0 for x in num_topks_correct
+		noun_top1, noun_top5 = [
+			(1.0 - x / feature.size(0)) * 100.0 for x in noun_topks_correct
 		]
+		verb_top1, verb_top5 = [
+			(1.0 - x / feature.size(0)) * 100.0 for x in verb_topks_correct
+		]
+		action_top1, action_top5 = [
+			(1.0 - x / feature.size(0)) * 100.0 for x in action_topks_correct
+		]
+
 		if cfg.NUM_GPUS > 1:
-			loss, top1_err, top5_err = du.all_reduce(
-						[loss, top1_err, top5_err])
+			noun_top1, noun_top5, verb_top1, verb_top5, action_top1, action_top5 = du.all_reduce(
+						[noun_top1, noun_top5, verb_top1, verb_top5, action_top1, action_top5])
 
 		# Copy the errors from GPU to CPU (sync point).
-		loss, top1_err, top5_err = (
-					loss.item(), top1_err.item(), top5_err.item())
+		noun_top1, noun_top5, verb_top1, verb_top5, action_top1, action_top5 = (
+			noun_top1.item(), noun_top5.item(), 
+			verb_top1.item(), verb_top5.item(),
+			action_top1.item(), action_top5.item())
 
 		val_meter.iter_toc()
 		# Update and log stats.
 		val_meter.update_stats(
-			{'loss': loss,
-			'top1_err': top1_err,
-			'top5_err': top5_err,
+			{'noun_top1_err': noun_top1,
+			'noun_top5_err': noun_top5,
+			'verb_top1_err': verb_top1,
+			'verb_top5_err': verb_top5,
+			'action_top1_err': action_top1,
+			'action_top5_err': action_top5,
 			},
 			feature.size(0) * cfg.NUM_GPUS
 		)
@@ -220,23 +246,31 @@ def eval_epoch(val_loader, model, classifier, val_meter, cur_epoch, cfg, tb_logg
 		val_meter.log_iter_stats(cur_epoch, cur_iter)
 		val_meter.iter_tic()
 
-	gt_labels = torch.cat(gt_labels, dim=0)
-	scores = torch.cat(scores, dim=0)
+	gt_noun_labels = torch.cat(gt_noun_labels, dim=0)
+	gt_verb_labels = torch.cat(gt_verb_labels, dim=0)
+
+	noun_scores = torch.cat(noun_scores, dim=0)
+	verb_scores = torch.cat(verb_scores, dim=0)
 
 	if cfg.NUM_GPUS > 1:
-		gt_labels, scores = du.all_gather([gt_labels, scores])
-		
+		gt_noun_labels, gt_verb_labels, noun_scores, verb_scores = du.all_gather(
+					[gt_noun_labels, gt_verb_labels, noun_scores, verb_scores])
+
 	# Log epoch stats.
 	val_epoch_stats = val_meter.log_epoch_stats(cur_epoch)
 	if du.is_master_proc():
 		step = cur_epoch * len(val_loader) + cur_iter
-		mAP = aps(gt_labels.cpu().numpy(), scores.cpu().numpy())
-		logger.info('epoch {} mAP = {}'.format(cur_epoch, mAP))
+		
+		noun_mAP = aps(gt_noun_labels.cpu().numpy(), noun_scores.cpu().numpy())
+		verb_mAP = aps(gt_verb_labels.cpu().numpy(), verb_scores.cpu().numpy())
+		logger.info('epoch {} noun mAP = {}'.format(cur_epoch, noun_mAP))
+		logger.info('epoch {} verb mAP = {}'.format(cur_epoch, verb_mAP))
+		tb_logger.add_scalar('val/noun_mAP', noun_mAP, step)
+		tb_logger.add_scalar('val/verb_mAP', verb_mAP, step)
 		for k, v in val_epoch_stats.items():
-			tb_logger.add_scalar('val_'+k, v, step)
-		tb_logger.add_scalar('val_mAP', mAP, step)
+			tb_logger.add_scalar('val/'+k, v, step)
 
-	del gt_labels, scores
+	del gt_noun_labels, gt_verb_labels, noun_scores, verb_scores
 	val_meter.reset()
 
 

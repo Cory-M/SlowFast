@@ -7,11 +7,12 @@ TRAIN:
   EVAL_PERIOD: 2
   CHECKPOINT_PERIOD: 10
   AUTO_RESUME: True
-  CHECKPOINT_FILE_PATH: /home/keyu/keyu/ckpt/mining_gt_sanity/checkpoint_epoch_00196.pyth
+  CHECKPOINT_FILE_PATH: /home/keyu/keyu/ckpt/slowfast_4x16.pkl
+  CHECKPOINT_TYPE: caffe2
 DATA:
   PATH_TO_DATA_DIR: /home/keyu/layer6/chundi/epic/rgb/
   PATH_TO_DATA_FILE: /home/keyu/keyu/data/epic/
-  NORMALIZATION: False
+  NORMALIZATION: True
   TARGET_FPS: 25
   MULTI_CLIP_NUM: 1
   NUM_FRAMES: 32
@@ -19,7 +20,7 @@ DATA:
   TRAIN_JITTER_SCALES: [256, 320]
   TRAIN_CROP_SIZE: 224
   TEST_CROP_SIZE: 256
-  INPUT_CHANNEL_NUM: [3]
+  INPUT_CHANNEL_NUM: [3, 3]
   RANDOM_FLIP: True
   CVRL_AUG: False
   AUG:
@@ -29,6 +30,11 @@ DATA:
     SATURATION_FACTOR: 0.8
     HUE_FACTOR: 0.2
     GREYSCALE_PROB: 0.2
+SLOWFAST:
+  ALPHA: 8
+  BETA_INV: 8
+  FUSION_CONV_CHANNEL_RATIO: 2
+  FUSION_KERNEL_SZ: 5
 RESNET:
   ZERO_INIT_FINAL_BN: True
   WIDTH_PER_GROUP: 64
@@ -36,10 +42,12 @@ RESNET:
   DEPTH: 50
   TRANS_FUNC: bottleneck_transform
   STRIDE_1X1: False
-  NUM_BLOCK_TEMP_KERNEL: [[3], [4], [6], [3]]
+  NUM_BLOCK_TEMP_KERNEL: [[3, 3], [4, 4], [6, 6], [3, 3]]
+  SPATIAL_STRIDES: [[1, 1], [2, 2], [2, 2], [2, 2]]
+  SPATIAL_DILATIONS: [[1, 1], [1, 1], [1, 1], [1, 1]]
 NONLOCAL:
-  LOCATION: [[[]], [[]], [[]], [[]]]
-  GROUP: [[1], [1], [1], [1]]
+  LOCATION: [[[], []], [[], []], [[], []], [[], []]]
+  GROUP: [[1, 1], [1, 1], [1, 1], [1, 1]]
   INSTANTIATION: dot_product
 BN:
   USE_PRECISE_STATS: True
@@ -59,9 +67,9 @@ MODEL:
   NUM_VERB_CLASSES: 125
   NUM_NOUN_CLASSES: 352
   NUM_EMBEDDING: 128
-  NUM_FEATURE: 2048
-  ARCH: cvrl
-  MODEL_NAME: ResNet
+  NUM_FEATURE: 2304
+  ARCH: slowfast
+  MODEL_NAME: SlowFast
   LOSS_FUNC: cross_entropy
   DROPOUT_RATE: 0.
   CLASSIFIER: LinearProbe
@@ -78,7 +86,7 @@ DATA_LOADER:
 NUM_GPUS: 8
 NUM_SHARDS: 1
 RNG_SEED: 0
-OUTPUT_DIR: /home/keyu/keyu/logs/Epic_eval/fixed/gt_mining_196_not_l2_largeLR
+OUTPUT_DIR: /home/keyu/keyu/logs/Epic_eval/fixed/sf_4x16_196_not_l2_largeLR
 METRIC:
   TRAIN: ['noun_top1_err', 'noun_top5_err', 'verb_top1_err', 'verb_top5_err', 'loss']
   EVAL: ['noun_top1_err', 'noun_top5_err', 'verb_top1_err', 'verb_top5_err', 'action_top1_err', 'action_top5_err']

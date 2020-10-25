@@ -58,8 +58,7 @@ class Epic(torch.utils.data.Dataset):
 		], "Split '{}' not supported for Kinetics".format(mode)
 		self.mode = mode
 		self.cfg = cfg
-		self.noun_num_classes = 352
-		self.verb_num_classes = 125
+
 		self._video_meta = {}
 		self._num_retries = num_retries
 		# For training or validation mode, one single clip is sampled from every
@@ -219,7 +218,7 @@ class Epic(torch.utils.data.Dataset):
 				crop_size=crop_size,
 				random_horizontal_flip=self.cfg.DATA.RANDOM_FLIP,
 				inverse_uniform_sampling=self.cfg.DATA.INV_UNIFORM_SAMPLE,
-				cvrl_aug=True,
+				cvrl_aug=self.cfg.DATA.CVRL_AUG,
 				aug_para=self.cfg.DATA.AUG,
 			)
 			clip = utils.pack_pathway_output(self.cfg, clip)
