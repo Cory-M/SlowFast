@@ -673,8 +673,8 @@ class ValMeter(object):
 			for k, v in self.metric['total'].items():
 				stats[k] = v / self.num_samples
 			for k, v in self.metric['min'].items():
-				v = min(v, stats[k])
-				stats['min_' + k] = v
+				self.metric['min'][k] = min(v, stats[k])
+				stats['min_' + k] = self.metric['min'][k]
 
 		logging.log_json_stats(stats)
 		return {k: v / self.num_samples for k, v in self.metric['total'].items()}
